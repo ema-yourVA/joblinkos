@@ -71,7 +71,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Dedupe In Batch — spreads all row fields so Company is preserved\nconst seen = new Map();\nconst results = [];\nfor (const entry of $input.all()) {\n  const row = entry.json;\n  const key = (row._linkKey || '').toLowerCase();\n  if (!row._isValid) {\n    results.push({ json: { ...row, _batchDuplicate: false, _invalidLink: true } });\n    continue;\n  }\n  if (seen.has(key)) {\n    results.push({ json: { ...row, _batchDuplicate: true, _firstRow: seen.get(key) } });\n  } else {\n    seen.set(key, row.row_number);\n    results.push({ json: { ...row, _batchDuplicate: false } });\n  }\n}\nreturn results;"
+        "jsCode": "// Dedupe In Batch: spreads all row fields so Company is preserved\nconst seen = new Map();\nconst results = [];\nfor (const entry of $input.all()) {\n  const row = entry.json;\n  const key = (row._linkKey || '').toLowerCase();\n  if (!row._isValid) {\n    results.push({ json: { ...row, _batchDuplicate: false, _invalidLink: true } });\n    continue;\n  }\n  if (seen.has(key)) {\n    results.push({ json: { ...row, _batchDuplicate: true, _firstRow: seen.get(key) } });\n  } else {\n    seen.set(key, row.row_number);\n    results.push({ json: { ...row, _batchDuplicate: false } });\n  }\n}\nreturn results;"
       },
       "name": "Dedupe In Batch1",
       "type": "n8n-nodes-base.code",
