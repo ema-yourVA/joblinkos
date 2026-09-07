@@ -1,0 +1,1106 @@
+{
+  "name": "Job Link OS - Link Collector",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "9bf6ce36-a28b-5220-ba00-e5cad81baa68",
+        "options": {
+          "responseData": "Link Collector started."
+        }
+      },
+      "name": "Webhook (Sheet Button)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1616,
+        344
+      ],
+      "id": "ba4822c7-94a2-5d65-a99d-a299db349329",
+      "webhookId": "931b3f0d-2bf4-56f5-a840-045a6bb978a2"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "<CONTROL_SHEET_ID>",
+          "mode": "list",
+          "cachedResultName": "NEW LINKS",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/<CONTROL_SHEET_ID>/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 195798639,
+          "mode": "list",
+          "cachedResultName": "Companies",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/<CONTROL_SHEET_ID>/edit#gid=195798639"
+        },
+        "options": {}
+      },
+      "name": "Fetch Companies (operator)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -1392,
+        440
+      ],
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000,
+      "id": "b6926095-099f-5c70-9daa-4a0e199cd15c",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "googleSheetsOAuth2Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// v27: careers URLs that can never be scraped as given, mapped to the real board.\n// [test, rewrite] — first match wins, applied before routing so the right handler is chosen.\nconst BOARD_REWRITES = [\n  // some careers pages sit behind a Queue-it waiting room while the underlying ATS board does not.\n  [/(^|\\.)example-org\\.org\\b/i, function () { return 'https://jobs.jobvite.com/example/search'; }],\n];\nfunction rewriteBoard(u) {\n  for (let i = 0; i < BOARD_REWRITES.length; i++) {\n    const host = (String(u).match(/^https?:\\/\\/([^\\/?#]+)/i) || [])[1] || '';\n    if (BOARD_REWRITES[i][0].test(host)) return BOARD_REWRITES[i][1](u);\n  }\n  return u;\n}\n\n// ── v40 (2026-08-08): scheduled batches ─────────────────────────────────────────────────────\n// The sheet button is unchanged — PRIORITY-ONLY, exactly as before. A Schedule Trigger run\n// instead takes a fixed slice of the Companies tab, so nothing has to be marked by hand:\n//   08:00 PHT → batch 1 · 09:00 → 2 · 10:00 → 3 · 11:00 → 4, EVERY day (v46: the 12:00 one-link\n//   batch was removed at the request — One Link now runs only from the manual sheet button)\n//   (v42: Tue–Sat\n//   skipped the expected Sunday start, and an idle-looking schedule is worse than a low-yield run)\n// Sizes come from the MEASURED runtime of the 2026-08-08 full run (306 companies / 116 min), not\n// from company count: the mega-boards sit together, so an equal-count split would give a 45-minute\n// batch next to a 15-minute one. Retune here and nowhere else.\n// v42 — re-derived after operator re-sorted the tab (weights carried across by Job Link):\n//   100 / 91 / 55 / 61 companies = 29 / 29 / 28 / 29 min. The v40 sizes still gave 29/30/29/28 on\n//   the new order, which is the point: a time-balanced split makes a re-sort a non-event.\nconst BATCH_SIZES = [100, 91, 55];   // batches 1-3; batch 4 takes everything left over\n\n// Never-scrape statuses, settled with operator 2026-08-08: Indeed/LinkedIn-only boards, postings with\n// no details or no salary, and companies whose jobs are all outside the 10 states. Matched on the\n// STATUS text rather than the company name so re-sorting the sheet cannot break it.\n// ⚠️ Must not catch \"Site has no job\" or \"Site has one job ok\" — different strings, both still run.\n// v79 (2026-09-01): operator relabelled the Status column again — \"Website not allowed - Indeed\",\n// \"Website Job has no salary/details\", \"Website Job states not allowed\". Added alongside the old\n// wordings, never replacing them, so a row the operator has not relabelled behaves identically.\n// ⚠️ \"Website HAS NO JOB posting\" must NOT match this (it IS collected, and normally returns 0) —\n//    hence `website job has no`, which needs the word \"job\" immediately after \"website\".\nconst NEVER_SCRAPE = /^(?:site not allowed|states not allowed|site's job has no|website not allowed|website job (?:has no|states not allowed))/i;\n// v47 (2026-08-10) ��� operator: on the SCHEDULE, fetch ONLY these statuses. An allowlist, deliberately:\n// the v40 blocklist fetched anything it did not recognise, so when column E was briefly cleared the\n// 11:00 batch collected the 12 one-link + 7 per-job rows as ordinary boards. Unknown/blank now skips.\n// ⚠️ Prefix match — \"Site has one job ok\" is a real variant and must stay allowed.\n// v71 (2026-09-01) — operator re-labelled the tab: \"Site has one job\" became \"one job\", and\n// \"two jobs\" / \"one only\" / \"site error\" appeared. An allowlist SKIPS what it does not\n// recognise, so 21 companies — including every \"two jobs\" row — had\n// silently dropped off the daily run between the 03:00 batch and the evening of 8/31.\n// ⚠️ \"one job\" is NOT \"one link\": OFFLOAD is still tested after this and still wins.\n// v79 (2026-09-01): \"Less than 3 jobs\" replaces \"one job\"/\"two jobs\", \"Website has no job posting\"\n// replaces \"Site has no job\", \"Website error\" replaces \"site error\".\n// ⚠️ THIRD time a relabelling has silently emptied part of the schedule. Measured on the live tab\n//    before this patch: 59 companies uncollected — 36 \"Less than 3 jobs\", 21 \"Website has no job\n//    posting\", 2 \"Website error\". The allowlist is right; it fails safe by SKIPPING, which is why\n//    every new wording has to be added here, and why v71 made the skipped rows show up in Slack.\n// ⚠️ Old tokens KEPT: a row still carrying an old label must keep running.\nconst SCHED_ALLOW = /^(?:ok|scrape nationally|site has no job|site has one job|one job|one only|two jobs|site error|less than \\d+ jobs?|website has no job|website error)\\b/i;\nconst OFFLOAD = /\\b(?:one[\\s_-]*link|per[\\s_-]*job)\\b/i;\n\nlet scheduled = false;\ntry { scheduled = $('Schedule Trigger').isExecuted === true; } catch (e) { scheduled = false; }\n\n// The Schedule Trigger prints Hour in the workflow timezone (Asia/Manila). Intl is the fallback so\n// a renamed/absent field can never silently collapse every run into batch 1.\nlet batch = 1;\nif (scheduled) {\n  let hh = null;\n  try { hh = Number($('Schedule Trigger').first().json.Hour); } catch (e) { hh = null; }\n  if (!isFinite(hh)) {\n    hh = Number(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hour12: false, timeZone: 'Asia/Manila' }).format(new Date()));\n  }\n  batch = Math.min(4, Math.max(1, hh - 7));   // 08:00 → 1 … 11:00 → 4 (v46: no batch 5)\n}\n\nconst out = [];\nconst pool = [];            // scheduled runs collect here first, then get sliced into the batch\nlet oneLinkSkipped = 0;\nconst oneLinkNames = [];\nfor (const item of $input.all()) {\n  const j = item.json;\n  const rawLink = String(j['Job Link'] || '').trim();\n  if (!rawLink || !/^https?:\\/\\//i.test(rawLink)) continue;\n  const status = String(j.Status || '');\n  if (NEVER_SCRAPE.test(status)) continue;                              // v40\n  if (scheduled && !SCHED_ALLOW.test(status.trim())) continue;          // v47: allowlist on the schedule\n  const link = rewriteBoard(rawLink);\n  if (!scheduled && String(j.Priority || '').trim() === '') continue; // PRIORITY-ONLY: only companies marked in col E run\n  // One-link companies are handled by \"Job Link OS - One Link Companies\" instead:\n  // their whole careers page is read there and each posting is cross-checked against\n  // the masterlist. Collecting them here would push a careers-page URL — or an outbound\n  // LinkedIn/Indeed apply link — into LIST, and neither is a job link.\n  if (OFFLOAD.test(status)) {\n    // v46: a scheduled run NEVER hands off — one_link_pending stays 0 on all four batches, so\n    // \"One Link Selected?\" cannot fire. The manual button still counts them (scheduled === false).\n    if (scheduled) continue;\n    oneLinkSkipped++; oneLinkNames.push(String(j.Company || '').trim()); continue;\n  }\n  let route = 'html';\n  if (/tbe\\.taleo\\.net/i.test(link)) route = 'taleo';\n  else if (/workforcenow\\.adp\\.com[^\\s]*[?&]cid=/i.test(link)) route = 'api';\n  else if (/(ultipro\\.com|rec\\.pro\\.ukg\\.net)\\/[^\\/]+\\/JobBoard\\/[0-9a-fA-F-]/i.test(link)) route = 'api';\n  (scheduled ? pool : out).push({ json: {\n    row_number: j.row_number,\n    record_id: String(j.row_number),\n    company: String(j.Company || '').trim(),\n    job_link: link,\n    sheet_link: rawLink,\n    link_rewritten: link !== rawLink,\n    last_fetched: j['Last Update'] || '',\n    priority: true,\n    is_taleo: route === 'taleo',\n    is_api: route === 'api',\n    route: route\n  } });\n}\nif (scheduled && batch !== 5) {\n  // v40: sheet order is the batch order. BATCH_SIZES covers batches 1-3; the last batch is\n  // \"everything from here on\", so a company added to the bottom of the tab is picked up by the\n  // schedule the next day with no code change.\n  pool.sort(function (a, b) { return (a.json.row_number || 0) - (b.json.row_number || 0); });\n  let from = 0;\n  for (let i = 0; i < batch - 1; i++) from += (BATCH_SIZES[i] || 0);\n  const size = BATCH_SIZES[batch - 1];\n  const slice = (size === undefined) ? pool.slice(from) : pool.slice(from, from + size);\n  for (let i = 0; i < slice.length; i++) out.push(slice[i]);\n}\nif (!out.length) {\n  if (oneLinkSkipped) {\n    // Every selected company is a one-link company. They are running — in the One Link\n    // Companies workflow, which fills in column G as it goes — so list them by name the\n    // way a normal run does. warning:true keeps them out of this workflow's Loop.\n    return oneLinkNames.map(function (nm, i) {\n      return { json: { warning: true, handed_off: true, company: nm, job_link: '',\n        queue_pos: i + 1, queue_total: oneLinkNames.length,\n        one_link_pending: oneLinkSkipped, one_link_names: oneLinkNames } };\n    });\n  }\n  // nothing marked at all: single warning row (shown in the Run Queue cell)\n  return [{ json: { warning: true, company: '⚠️ NO COMPANY SELECTED — put 1 in Priority (col E) first',\n    job_link: '', queue_pos: 1, queue_total: 0, one_link_pending: 0, one_link_names: [] } }];\n}\nout.sort(function (a, b) { return (a.json.row_number || 0) - (b.json.row_number || 0); });\nout.forEach(function (it, i) {\n  it.json.queue_pos = i + 1;\n  it.json.queue_total = out.length;\n  it.json.run_mode = scheduled ? ('schedule-batch-' + batch) : 'manual';   // v40\n  // read by \"One Link Selected?\" — those companies are handed to the One Link workflow\n  it.json.one_link_pending = oneLinkSkipped;\n  it.json.one_link_names = oneLinkNames;\n});\nreturn out;"
+      },
+      "name": "Prep Companies",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1168,
+        440
+      ],
+      "alwaysOutputData": false,
+      "id": "611eb5d4-b942-516f-b33c-054d6822d47c"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Loop (rate limit)",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -720,
+        440
+      ],
+      "id": "85f55521-834f-5e49-81f7-4466117abbdb"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "is-taleo",
+              "leftValue": "={{ $json.is_taleo }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Is Taleo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -496,
+        368
+      ],
+      "id": "081cce4b-bf95-51b1-9515-aeeb8961b250"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const ALLOWED = new Set(['CA','CT','IL','DC','NJ','NY','RI','VA','MD','WA']);\nconst item = $input.item.json;\nconst baseUrl = item.job_link;\nconst UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';\nconst jobs = new Map();\n\nlet reqBase = null;\nconst m0 = baseUrl.match(/^(https?:\\/\\/[^\\/]+\\/[^\\/]+)\\/ats\\/careers\\/v2/i);\nif (m0) reqBase = m0[1] + '/ats/careers/v2/viewRequisition';\n\n// Some Taleo BE boards use a generic share title (\"View job details and apply now\") with no location,\n// so we ALSO parse the plain viewJobLink anchors for real titles, and later fetch detail pages for state-less jobs.\nfunction parsePage(html) {\n  const re = /viewRequisition%3Forg%3D([A-Z0-9]+)%26cws%3D(\\d+)%26rid%3D(\\d+)&title=([^&]+)&/g;\n  let m, added = 0;\n  while ((m = re.exec(html)) !== null) {\n    const org = m[1], cws = m[2], rid = m[3], rawTitle = m[4];\n    if (jobs.has(rid)) continue;\n    added++;\n    let full = rawTitle.replace(/\\+/g, ' ');\n    try { full = decodeURIComponent(full); } catch (e) {}\n    let title = full.replace(/^Hiring /, '');\n    if (/^View job details/i.test(title)) title = '';\n    const parts = title.split(' - ');\n    const location = title ? parts[parts.length - 1].trim() : '';\n    const stMatch = location.match(/,\\s*([A-Z]{2})$/);\n    const state = stMatch ? stMatch[1] : null;\n    const urlBase = reqBase || 'https://phe.tbe.taleo.net/phe03/ats/careers/v2/viewRequisition';\n    jobs.set(rid, { title: title, location: location, state: state, url: urlBase + '?org=' + org + '&cws=' + cws + '&rid=' + rid });\n  }\n  const reA = /<a href=\"(https?:\\/\\/[^\"]*viewRequisition\\?org=([A-Z0-9]+)&(?:amp;)?cws=(\\d+)&(?:amp;)?rid=(\\d+))\"[^>]*class=\"viewJobLink\"[^>]*>([^<]+)</g;\n  let a;\n  while ((a = reA.exec(html)) !== null) {\n    const rid = a[4];\n    const aTitle = a[5].replace(/\\s+/g, ' ').trim();\n    if (jobs.has(rid)) {\n      const j = jobs.get(rid);\n      if (!j.title) j.title = aTitle;\n      if (!j.state) {\n        const sm2 = aTitle.match(/,\\s*([A-Z]{2})\\s*$/);\n        if (sm2) j.state = sm2[1];\n      }\n    } else {\n      added++;\n      const sm2 = aTitle.match(/,\\s*([A-Z]{2})\\s*$/);\n      jobs.set(rid, { title: aTitle, location: '', state: sm2 ? sm2[1] : null, url: a[1].replace(/&amp;/g, '&') });\n    }\n  }\n  return added;\n}\n\nlet fetch_ok = true, fetch_error = '';\ntry {\n  const first = await this.helpers.httpRequest({ url: baseUrl, method: 'GET', returnFullResponse: true, headers: { 'User-Agent': UA }, timeout: 60000 });\n  const rawCookies = first.headers['set-cookie'] || [];\n  const cookieList = Array.isArray(rawCookies) ? rawCookies : [rawCookies];\n  const cookie = cookieList.map(function (c) { return String(c).split(';')[0]; }).join('; ');\n  const body1 = typeof first.body === 'string' ? first.body : JSON.stringify(first.body);\n  let added = parsePage(body1);\n  let offset = 10, pages = 1;\n  while (added > 0 && pages < 30) {\n    const sep = baseUrl.indexOf('?') >= 0 ? '&' : '?';\n    const pageUrl = baseUrl + sep + 'rowFrom=' + offset;\n    const headers = { 'User-Agent': UA };\n    if (cookie) headers.Cookie = cookie;\n    const res = await this.helpers.httpRequest({ url: pageUrl, method: 'GET', headers: headers, timeout: 60000 });\n    const body = typeof res === 'string' ? res : JSON.stringify(res);\n    added = parsePage(body);\n    offset += 10;\n    pages++;\n  }\n  // Resolve state-less jobs from their detail pages (\"New Bern, NC / Full-time\" style line), batches of 5, cap 60.\n  const nulls = Array.from(jobs.values()).filter(function (j) { return !j.state; }).slice(0, 60);\n  const fetchDetail = async function (j) {\n    try {\n      const res = await this.helpers.httpRequest({ url: j.url, method: 'GET', headers: { 'User-Agent': UA }, timeout: 45000 });\n      const body = typeof res === 'string' ? res : JSON.stringify(res);\n      const text = body.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\\s+/g, ' ');\n      const lm = text.match(/([A-Za-z .'-]{2,40},\\s*([A-Z]{2}))\\s*\\/\\s*(Full|Part|Per[- ]?Diem|PRN|Temp|Seasonal|Intern|Contract)/i);\n      if (lm) { j.location = lm[1].trim(); j.state = lm[2]; }\n    } catch (e) {}\n  }.bind(this);\n  for (let i = 0; i < nulls.length; i += 5) {\n    await Promise.all(nulls.slice(i, i + 5).map(function (j) { return fetchDetail(j); }));\n  }\n} catch (e) {\n  fetch_ok = jobs.size > 0;\n  fetch_error = (e && e.message) ? e.message : String(e);\n}\n\nconst all = Array.from(jobs.values());\nconst allowed = all.filter(function (j) { return j.state && ALLOWED.has(j.state); });\nreturn { json: Object.assign({}, item, { fetch_ok: fetch_ok, fetch_error: fetch_error, total_found: all.length, jobs: allowed }) };\n"
+      },
+      "name": "Taleo Collect Links",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        128
+      ],
+      "id": "41c37682-2877-5bdc-9612-37f2337eb71c"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://scraper-api.decodo.com/v2/scrape",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "<DECODO_BASIC_AUTH>"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"url\": {{ JSON.stringify($('Loop (rate limit)').item.json.job_link) }},\n  \"headless\": \"html\",\n  \"geo\": \"United States\",\n  \"proxy_pool\": \"premium\",\n  \"wait_time\": 5\n}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "name": "Decodo Fetch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        608
+      ],
+      "onError": "continueRegularOutput",
+      "id": "b568ea92-4f2f-5136-b461-fd0a71c98734"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const ALLOWED = new Set(['CA','CT','IL','DC','NJ','NY','RI','VA','MD','WA']);\nconst ALL_STATES = new Set(['AL','AK','AZ','AR','CA','CO','CT','DE','DC','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY']);\nconst NAME2CODE = { 'alabama':'AL','alaska':'AK','arizona':'AZ','arkansas':'AR','california':'CA','norcal':'CA','socal':'CA','colorado':'CO','connecticut':'CT','delaware':'DE','district of columbia':'DC','florida':'FL','georgia':'GA','hawaii':'HI','idaho':'ID','illinois':'IL','indiana':'IN','iowa':'IA','kansas':'KS','kentucky':'KY','louisiana':'LA','maine':'ME','maryland':'MD','massachusetts':'MA','michigan':'MI','minnesota':'MN','mississippi':'MS','missouri':'MO','montana':'MT','nebraska':'NE','nevada':'NV','new hampshire':'NH','new jersey':'NJ','new mexico':'NM','new york':'NY','north carolina':'NC','north dakota':'ND','ohio':'OH','oklahoma':'OK','oregon':'OR','pennsylvania':'PA','rhode island':'RI','south carolina':'SC','south dakota':'SD','tennessee':'TN','texas':'TX','utah':'UT','vermont':'VT','virginia':'VA','washington':'WA','west virginia':'WV','wisconsin':'WI','wyoming':'WY' };\nconst NAME_RE = new RegExp('\\\\b(' + Object.keys(NAME2CODE).sort(function (a, b) { return b.length - a.length; }).join('|') + ')\\\\b', 'gi');\nconst EXCLUDE_RE = /\\/(ajax|login|register|signin|sign-in|signup|sign-up|createaccount|forgotpassword|jobalerts?|job-alerts?|talent-?community|saved-?jobs|benefits|privacy|terms)\\b/i;\n\nconst ctx = $('Loop (rate limit)').item.json;\nconst resp = $input.item.json;\nconst statusCode = resp.statusCode || 0;\nlet html = '';\nconst b = resp.body || resp;\nif (typeof b === 'string') html = b;\nelse if (b && typeof b === 'object') {\n  if (Array.isArray(b.results) && b.results.length) html = String(b.results[0].content || '');\n  else if (typeof b.content === 'string') html = b.content;\n  else if (typeof b.data === 'string') html = b.data;\n}\nif (!html || html.length < 500) {\n  try {\n    let direct = await this.helpers.httpRequest({ url: ctx.job_link, method: 'GET', headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36', Accept: 'text/html' }, timeout: 60000 });\n    if (typeof direct !== 'string') direct = JSON.stringify(direct);\n    if (direct && direct.length > html.length) html = direct;\n  } catch (e) {}\n}\nconst fetch_ok = html.length > 500;\nconst jobs = new Map();\n\nfunction absolutize(href, base) {\n  href = String(href || '').trim().replace(/&amp;/g, '&');\n  if (!href || /^(javascript:|mailto:|tel:|#)/i.test(href)) return null;\n  if (/^https?:\\/\\//i.test(href)) return href;\n  const mB = base.match(/^(https?:)\\/\\/([^\\/?#]+)([^?#]*)?/i);\n  if (!mB) return null;\n  const proto = mB[1], host = mB[2];\n  if (href.indexOf('//') === 0) return proto + href;\n  if (href.charAt(0) === '/') return proto + '//' + host + href;\n  let basePath = mB[3] || '/';\n  basePath = basePath.replace(/[^\\/]*$/, '');\n  return proto + '//' + host + basePath + href;\n}\n\n// v27: a bare [A-Z]{2} token that happens to be a state code is NOT proof of a state.\n// \"Resident Aide I (South LA)\" and \"LA County Department of Mental Health\"\n// both resolved to LA=Louisiana and silently deleted 6 real Los Angeles jobs. Codes are now\n// STRONG only with address context (comma before -> \"City, ST\", or a ZIP after); everything else\n// is WEAK. Weak hits still tag/keep a job, but only a STRONG non-allowed hit may drop one, so this\n// can never start dropping something that is kept today.\n// v30: ';' and '|' are separators too (see Probe Careers API).\nconst CODE_RE_V27 = /([,;|\\s(\\/-])([A-Z]{2})(?=[\\s,;|).\\/-]|$)/g;\n// v37: \"Port Washington, WI\" / \"Fort Washington, Pennsylvania 19034\" both scanned as WASHINGTON —\n// 13 jobs in Wisconsin and 18 more at a Fort Washington PA head office\n// went into the sheet as Washington State. A state NAME is the CITY, not the state, when it is\n// (a) preceded with no separator by a capitalised word that is not a connector, and (b) immediately\n// followed by \", <another state>\". It can only demote a name that a more specific state token\n// follows, and that token is added in its place, so no window that resolves today comes back empty.\nconst V37_CONNECTORS = /^(in|at|of|for|to|and|or|from|near|the|greater|remote|onsite|hybrid|within|across|serving|throughout|state|states|county|counties|city|area|region|west|east|north|south|central|northern|southern|eastern|western)$/i;\nfunction v37NextState(post) {\n  const cm = post.match(/^\\s*,\\s*([A-Za-z]{2})(?=[\\s,;|).\\/-]|$)/);\n  if (cm && ALL_STATES.has(cm[1].toUpperCase())) return cm[1].toUpperCase();\n  const nm2 = post.match(/^\\s*,\\s*([A-Za-z][A-Za-z ]{2,20}?)(?=[\\s,;|).\\/-]|\\d|$)/);\n  if (nm2) { const c = NAME2CODE[nm2[1].trim().toLowerCase()]; if (c) return c; }\n  return null;\n}\nfunction v37IsCityName(textWin, index, matched, code) {\n  const pre = textWin.slice(Math.max(0, index - 30), index);\n  const preWordM = pre.match(/([A-Za-z][A-Za-z.'-]*)\\s+$/);\n  if (!preWordM) return false;\n  const w = preWordM[1];\n  if (w !== w.toUpperCase() && w[0] !== w[0].toUpperCase()) return false;\n  if (V37_CONNECTORS.test(w.replace(/[.'-]/g, ''))) return false;\n  const next = v37NextState(textWin.slice(index + matched.length, index + matched.length + 30));\n  return !!next && next !== code;\n}\n// v38: \"Washington, District of Columbia\" and \"Washington, D.C.\" are the CITY\n// Washington, not Washington State — one board filed 38 of its 53 postings that way and\n// every one of them came out tagged WA. Normalising the phrase away before the scan removes the\n// \"washington\" token and leaves \"district of columbia\", which resolves to DC. DC and WA are both\n// allowed states, so this can only ever change a label, never a keep/drop decision. (Flagged as a\n// cosmetic leftover in v25; that board is what made it worth fixing.)\nfunction v38DcNormalise(t) {\n  return String(t || '').replace(/\\bwashington\\b\\s*,?\\s*(?:d\\.?\\s*c\\.?|district\\s+of\\s+columbia)\\b/gi, 'District of Columbia');\n}\nfunction scanStates(rawWindow) {\n  const textWin = v38DcNormalise(rawWindow.replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ')); // v38: \"Washington, D.C.\" is the city Washington\n  const strong = [];\n  const weak = [];\n  let cm;\n  CODE_RE_V27.lastIndex = 0;\n  while ((cm = CODE_RE_V27.exec(textWin)) !== null) {\n    const code = cm[2];\n    if (!ALL_STATES.has(code)) continue;\n    const after = textWin.slice(cm.index + cm[0].length, cm.index + cm[0].length + 12);\n    // cm[1] holds only the single delimiter char and \"Miami, FL\" puts a space there, so look back\n    // across the whitespace run for the comma that makes this a real \"City, ST\" address.\n    const before = textWin.slice(Math.max(0, cm.index - 40), cm.index + 1);\n    const bucket = (/,\\s*$/.test(before) || /^[\\s,]*\\d{5}(?:-\\d{4})?\\b/.test(after)) ? strong : weak;\n    if (bucket.indexOf(code) === -1) bucket.push(code);\n  }\n  let nm;\n  NAME_RE.lastIndex = 0;\n  while ((nm = NAME_RE.exec(textWin)) !== null) {\n    const code = NAME2CODE[nm[1].toLowerCase()];\n    if (!code) continue;\n    if (v37IsCityName(textWin, nm.index, nm[1], code)) continue; // v37: \"Port Washington, WI\"\n    if (strong.indexOf(code) === -1) strong.push(code); // spelled-out state name is always strong\n  }\n  const all = strong.slice();\n  for (let i = 0; i < weak.length; i++) if (all.indexOf(weak[i]) === -1) all.push(weak[i]);\n  return { all: all, strong: strong };\n}\nfunction detectStates(rawWindow) { return scanStates(rawWindow).all; }\n\nconst taleoRe = /viewRequisition%3Forg%3D([A-Z0-9]+)%26cws%3D(\\d+)%26rid%3D(\\d+)&title=([^&]+)&/g;\nlet tm;\nwhile ((tm = taleoRe.exec(html)) !== null) {\n  const rid = tm[3];\n  const key = 'taleo-' + rid;\n  if (jobs.has(key)) continue;\n  let full = tm[4].replace(/\\+/g, ' ');\n  try { full = decodeURIComponent(full); } catch (e) {}\n  const title = full.replace(/^Hiring /, '');\n  const parts = title.split(' - ');\n  const location = parts[parts.length - 1].trim();\n  const stMatch = location.match(/,\\s*([A-Z]{2})$/);\n  const state = stMatch ? stMatch[1] : null;\n  if (state && !ALLOWED.has(state)) continue;\n  jobs.set(key, { url: 'https://phe.tbe.taleo.net/phe03/ats/careers/v2/viewRequisition?org=' + tm[1] + '&cws=' + tm[2] + '&rid=' + rid, state: state, title: title });\n}\n\nconst JOB_HREF = /(apploi\\.com\\/view\\/\\d+|smartsearchonline\\.com\\/[^\"\\x27\\s]*jobdetails\\.asp\\?jo_num=\\d+|workstream\\.us\\/[^\"\\x27\\s]*positions\\/[\\w-]+|culinaryagents\\.com\\/jobs\\/\\d+|\\/job-listings\\/[a-z0-9][a-z0-9-]{4,}|jobs\\.workable\\.com\\/view\\/\\w+|farwestcorrosion\\.com\\/careers\\/[\\w-]{5,}|greenhouse\\.io\\/[^\"'\\s]*jobs\\/\\d+|jobs\\.lever\\.co\\/[^\"'\\s]+\\/[0-9a-f]{8}[0-9a-f-]+|myworkdayjobs\\.com\\/[^\"'\\s]+\\/job\\/|icims\\.com\\/jobs\\/\\d+|workforcenow\\.adp\\.com\\/[^\"'\\s]*jobId=\\d+|governmentjobs\\.com\\/careers\\/[^\"'\\s]+\\/jobs\\/\\d+|careerplug\\.com\\/jobs\\/\\d+|paycomonline\\.net\\/[^\"'\\s]*jobsapp[^\"'\\s]*|csod\\.com\\/ux\\/ats\\/careersite\\/[^\"'\\s]*requisition[^\"'\\s]*|jobvite\\.com\\/[^\"'\\s]+\\/job\\/\\w+|app\\.jobvite\\.com\\/CompanyJobs\\/Job\\.aspx\\?j=\\w+|apply\\.workable\\.com\\/[^\"'\\s]+\\/j\\/\\w+|bamboohr\\.com\\/careers\\/\\d+|recruitee\\.com\\/o\\/[\\w-]+|breezy\\.hr\\/p\\/[\\w-]+|ats\\.rippling\\.com\\/[^\"'\\s]+\\/jobs\\/[\\w-]+|applytojob\\.com\\/apply\\/\\w+|jobs\\.gusto\\.com\\/postings\\/[\\w-]+|hrmdirect\\.com\\/employment\\/[^\"'\\s]*job-opening[^\"'\\s]*|MainInfoReq\\.asp\\?R_ID=\\d+|\\/careers\\/co\\/[a-z0-9-]+\\/[A-Za-z0-9.]{4,}\\/[a-z0-9-]+|OpportunityDetail\\?opportunityId=|\\/careers?\\/[^\"'\\s]*\\d{3,}|\\/jobs?\\/[^\"'\\s]*\\d{3,})/i;\nconst COMEET_NONUS_CITY = /\\/careers\\/co\\/(tel-aviv|jerusalem|haifa|london|manchester-uk|toronto|vancouver|montreal|ottawa|dublin|berlin|munich|paris|amsterdam|singapore|sydney|melbourne|bangalore|bengaluru|mumbai|delhi|pune|kyiv|kiev|warsaw|krakow|lisbon|madrid|barcelona|mexico-city|sao-paulo|bogota|buenos-aires|tokyo|seoul)\\b/i;\nconst SELF = ctx.job_link.replace(/\\/+$/, '');\nconst aRe = /<a\\b[^>]*href=[\"']([^\"'#][^\"']*)[\"'][^>]*>([\\s\\S]*?)<\\/a>/gi;\nconst seen = new Set();\n\n// v27 pass 1 — collect the candidate job anchors with their offsets. Pass 2 needs to know where the\n// NEXT job link starts so a row's state window cannot reach into its neighbour (one board's Miami\n// job was kept and tagged NY off the next row; another's Sparks NV job tagged CA the same way;\n// a third leaked 22 out-of-state contractor roles).\nconst cands = [];\nlet m;\nwhile ((m = aRe.exec(html)) !== null) {\n  const abs = absolutize(m[1], ctx.job_link);\n  if (!abs) continue;\n  if (abs.replace(/\\/+$/, '') === SELF) continue;\n  if (EXCLUDE_RE.test(abs)) continue;\n  if (!JOB_HREF.test(abs) && !/\\.pdf(\\?|$)/i.test(abs)) continue;\n  cands.push({ abs: abs, inner: m[2], start: m.index, end: m.index + m[0].length });\n}\n\nfor (let ci = 0; ci < cands.length; ci++) {\n  const c = cands[ci];\n  const abs = c.abs;\n  const _q = abs.match(/[?&](jo_num|opportunityId|jobId|reqid|req_id|R_ID|req|id|j)=([\\w-]+)/i);\n  const clean = abs.replace(/\\/+$/, '').split('?')[0] + (_q ? '#' + _q[1] + _q[2] : '');\n  if (!JOB_HREF.test(abs)) {\n    const pdfText = c.inner.replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim();\n    if (pdfText.length < 4 || /report|brochure|handbook|benefits?|newsletter|policy|form|application|guide|flyer|catalog/i.test(pdfText)) continue;\n  }\n  if (seen.has(clean)) continue;\n  seen.add(clean);\n  const isComeet = /\\/careers\\/co\\//i.test(abs);\n  let states, strongStates;\n  if (isComeet) {\n    // Comeet URLs carry the city in the path; page windows bleed into neighbouring cards, so trust the URL only\n    const r = scanStates(' ' + decodeURIComponent(abs.split('/careers/co/')[1] || '').split('/')[0].replace(/[-_+]/g, ' ') + ' ');\n    states = r.all; strongStates = r.strong;\n    if (!states.length && COMEET_NONUS_CITY.test(abs)) continue;\n  } else {\n    // Primary window: THIS anchor's start -> the NEXT anchor's start. On list boards the location\n    // trails its title link (\"<a>Sales Representative</a> - Sparks, NV\") or sits inside the anchor\n    // text (\"<a>...Independent Contractor (Arizona)</a>\"), so this captures the row's own location\n    // and nothing else. Starting at the previous anchor's END is not enough — the\n    // preceding \"- Bakersfield, CA\" would still rescue the Nevada row.\n    const nextStart = ci + 1 < cands.length ? cands[ci + 1].start : html.length;\n    let hi = Math.min(nextStart, c.end + 2500, html.length);\n    let rawWindow = html.slice(c.start, hi > c.start ? hi : c.start);\n    let r = scanStates(rawWindow);\n    if (!r.all.length) {\n      // nothing trailing — the minority of boards that print the location BEFORE the link. Widen\n      // backwards only in that case, so this can add context but never override a real location.\n      const prevEnd = ci > 0 ? cands[ci - 1].end : 0;\n      const lo = Math.max(prevEnd, c.start - 300, 0);\n      r = scanStates(html.slice(lo, hi > lo ? hi : lo));\n    }\n    states = r.all; strongStates = r.strong;\n    try {\n      const ur = scanStates(' ' + decodeURIComponent(abs).replace(/[-_\\\\/+.]/g, ' ') + ' ');\n      for (let k = 0; k < ur.all.length; k++) if (states.indexOf(ur.all[k]) === -1) states.push(ur.all[k]);\n      for (let k = 0; k < ur.strong.length; k++) if (strongStates.indexOf(ur.strong[k]) === -1) strongStates.push(ur.strong[k]);\n    } catch (e) {}\n  }\n  const allowedStates = states.filter(function (s) { return ALLOWED.has(s); });\n  const strongNotAllowed = strongStates.filter(function (s) { return !ALLOWED.has(s); });\n  // v27: only a STRONG non-allowed state may delete a job. Previously any hit did, so one stray\n  // \"LA\" in a job description was enough to bin a Los Angeles posting.\n  if (!allowedStates.length && strongNotAllowed.length) continue;\n  const state = allowedStates[0] || null;\n  const text = c.inner.replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim().slice(0, 120);\n  jobs.set(clean, { url: abs, state: state, title: text });\n}\n\n// v35: links the GENERIC extractor harvests off a company's own careers page\n// carry NO card location — the state is guessed from a text window, which bleeds between rows.\n// One board collected 10 Detroit, Michigan jobs: 8 state-unknown (the HQ rule then stamped them NY)\n// and 2 tagged NY outright. When the link points at an ATS with a public detail payload, read the\n// location from THERE and let it OVERRIDE the window guess — it is the authoritative source.\n// Runs BEFORE the HQ-address fallback so that fallback only ever sees genuinely unresolved rows.\nconst DETAIL_HOSTS = [\n  { re: /^https?:\\/\\/(?:www\\.)?culinaryagents\\.com\\/jobs\\/\\d+/i, kind: 'culinaryagents' },\n  { re: /^https?:\\/\\/[a-z0-9][a-z0-9-]*\\.bamboohr\\.com\\/careers\\/\\d+(?:[/?#]|$)/i, kind: 'bamboohr' }\n];\nconst rescueTargets = [];\nfor (const kv of Array.from(jobs.entries())) {\n  const hit = DETAIL_HOSTS.find(function (h) { return h.re.test(kv[1].url); });\n  if (hit) rescueTargets.push({ key: kv[0], job: kv[1], kind: hit.kind });\n}\nif (rescueTargets.length && rescueTargets.length <= 200) {\n  const dGet = async function (url, headers) {\n    return await this.helpers.httpRequest({ url: url, method: 'GET', headers: Object.assign({ 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36' }, headers || {}), timeout: 25000 });\n  }.bind(this);\n  const resolveOne = async function (t) {\n    try {\n      if (t.kind === 'culinaryagents') {\n        const h = String(await dGet(t.job.url, { Accept: 'text/html' }));\n        const blocks = h.match(/<script[^>]+application\\/ld\\+json[^>]*>[\\s\\S]*?<\\/script>/gi) || [];\n        for (const b2 of blocks) {\n          const raw = b2.replace(/^[\\s\\S]*?>/, '').replace(/<\\/script>$/i, '');\n          let j; try { j = JSON.parse(raw); } catch (e) { continue; }\n          const arr = Array.isArray(j) ? j : [j];\n          for (const o of arr) {\n            if (!o || o['@type'] !== 'JobPosting') continue;\n            const jl = Array.isArray(o.jobLocation) ? o.jobLocation[0] : o.jobLocation;\n            const reg = String((((jl || {}).address) || {}).addressRegion || '').trim();\n            if (reg) return ALL_STATES.has(reg.toUpperCase()) ? reg.toUpperCase() : (NAME2CODE[reg.toLowerCase()] || null);\n          }\n        }\n        return null;\n      }\n      const om = t.job.url.match(/^(https?:\\/\\/[^\\/]+)\\/careers\\/(\\d+)/i);\n      if (!om) return null;\n      let d = await dGet(om[1] + '/careers/' + om[2] + '/detail', { Accept: 'application/json' });\n      if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { return null; } }\n      const jo = (d && d.result && d.result.jobOpening) || (d && d.jobOpening) || d || {};\n      const reg2 = String(((jo.atsLocation || {}).state) || ((jo.location || {}).state) || '').trim();\n      if (!reg2) return null;\n      return ALL_STATES.has(reg2.toUpperCase()) ? reg2.toUpperCase() : (NAME2CODE[reg2.toLowerCase()] || null);\n    } catch (e) { return null; }\n  };\n  for (let i = 0; i < rescueTargets.length; i += 6) {\n    const slice = rescueTargets.slice(i, i + 6);\n    const got = await Promise.all(slice.map(resolveOne));\n    slice.forEach(function (t, k) {\n      const code = got[k];\n      if (!code) return;                       // unresolved -> leave the row exactly as it was\n      if (ALLOWED.has(code)) t.job.state = code;\n      else jobs.delete(t.key);\n    });\n  }\n}\n\n// HQ-address fallback (operator 2026-07-12): when the page's full postal addresses (\"City, ST 12345\") all sit in ONE state,\n// that's the company's office state - apply it to state-unknown links: keep+tag if allowed, drop otherwise.\n// Multi-state pages (boards with addresses everywhere) are untouched: unknown links stay kept as before.\nconst hqStates = [];\nconst hqRe = /,\\s*([A-Z]{2})[\\s ]+\\d{5}(?:-\\d{4})?\\b/g;\nlet hqm;\nwhile ((hqm = hqRe.exec(html)) !== null) {\n  const c = hqm[1];\n  if (ALL_STATES.has(c) && hqStates.indexOf(c) === -1) hqStates.push(c);\n}\nif (hqStates.length === 1) {\n  for (const kv of Array.from(jobs.entries())) {\n    if (kv[1].state) continue;\n    if (ALLOWED.has(hqStates[0])) kv[1].state = hqStates[0];\n    else jobs.delete(kv[0]);\n  }\n}\n\n\nreturn { json: Object.assign({}, ctx, { fetch_ok: fetch_ok, fetch_error: fetch_ok ? '' : ('Decodo status ' + statusCode + ', html length ' + html.length), total_found: jobs.size, jobs: Array.from(jobs.values()) }) };\n"
+      },
+      "name": "Extract Job Links",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        608
+      ],
+      "id": "54145f17-9a00-5991-af5c-13346315a80d"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format Sheet Rows — one sheet row per job link (+ canonical-URL cleaning).\n//\n// CANONICAL LINK RULE (2026-07-31, widened 2026-08-01): the sheet gets the job's own unique URL —\n// https://jobs.apploi.com/view/770506, not .../770506?utm_campaign=jobs_snippet&_=1784956010.8110137\n// https://example.bamboohr.com/careers/507, not .../507?euidtkncn=htXXP2zqOPEtdOQ\n// Dropped: analytics, cache-busters, UI-language, board-skin and referrer params, plus any param\n// with an empty value. Anything that could identify or route the posting (clientkey, cid, ccId,\n// jobId, R_ID, req, req_loc, jo_num, opportunityId, POSTING_ID, AppliTrackJobId, partnerid, siteid,\n// PageType, embed, embedded, ...) is left untouched, so a clean-up can never turn a working link\n// into a dead one. Every name in the 2026-08-01 group was verified live: full URL vs stripped URL\n// return the same job page (same status, same <title>). embed / embedded are NOT stripped —\n// jobs.silkroad.com redirects to the company board without ?embedded=true.\n// The fragment (#jobapplication, #job) is kept, except a bare colour (#FFFFFF = the tail of\n// an ATS skin's ssbgcolor=#FFFFFF, which the URL parser reads as a fragment).\nconst STRIP_EXACT = new Set([\n  '_',                                   // jQuery/apploi cache buster (&_=1784956010.81)\n  'gclid', 'gbraid', 'wbraid', 'dclid',  // Google Ads click ids\n  'fbclid', 'msclkid', 'twclid', 'ttclid', 'igshid', 'yclid',\n  'mkt_tok', 'mc_cid', 'mc_eid', '_hsenc', '_hsmi', '_ga', '_gl',\n  's_kwcid', 'ef_id',\n  // ── added 2026-08-01, each verified against a live job page ──\n  'euidtkncn',                           // BambooHR embed.js per-render token (ImageCare)\n  'lang', 'locale',                      // UI language: SuccessFactors, ADP, Taleo, Paycor, Cadient\n  'nl',                                  // Jobvite layout flag (?nl=1)\n  'source',                              // JazzHR ?source=website, OurCareerPages ?source=BraggInv\n  'jobfeedcode', 'returnurl',            // OurCareerPages feed attribution + back-link\n  'jbsrc', 'cust_sort1', 'cust_sort2', 'nohd',   // hrmDirect board-skin params\n  'searchscreenid', 'ssbgcolor',         // Paychex AppOne search-screen skin\n  'selectedmenukey'                      // ADP career-center menu state\n]);\nconst STRIP_PREFIX = ['utm_', 'rx_', 'pk_', 'piwik_', 'hsa_'];\n// Names too generic to strip everywhere — junk on these hosts only.\nconst STRIP_BY_HOST = [\n  [/(^|\\.)applitrack\\.com$/, ['all', 'applitracklayoutmode', 'applitracksort', 'applitrackzipradius']]\n];\n\nfunction hostOf(u) {\n  const m = u.match(/^https?:\\/\\/([^\\/?#]+)/i);\n  return m ? m[1].toLowerCase().replace(/:\\d+$/, '') : '';\n}\n\nfunction cleanJobUrl(raw) {\n  if (typeof raw !== 'string') return raw;\n  const url = raw.trim();\n  if (!/^https?:\\/\\//i.test(url)) return url;          // leave anything odd alone\n  const hashAt = url.indexOf('#');\n  let hash = hashAt >= 0 ? url.slice(hashAt) : '';\n  if (/^#[0-9a-f]{3,8}$/i.test(hash)) hash = '';        // \"#FFFFFF\" — a colour, not an anchor\n  const noHash = hashAt >= 0 ? url.slice(0, hashAt) : url;\n  const qAt = noHash.indexOf('?');\n  if (qAt < 0) return noHash + hash;                    // no query, nothing to strip\n  const path = noHash.slice(0, qAt);\n  const query = noHash.slice(qAt + 1);\n  const host = hostOf(url);\n  let hostExtra = null;\n  for (let h = 0; h < STRIP_BY_HOST.length; h++) {\n    if (STRIP_BY_HOST[h][0].test(host)) { hostExtra = STRIP_BY_HOST[h][1]; break; }\n  }\n  const kept = [];\n  const parts = query.split('&');\n  for (let i = 0; i < parts.length; i++) {\n    const part = parts[i];\n    if (!part) continue;                                // stray \"&&\" (hrmDirect)\n    const eq = part.indexOf('=');\n    const name = (eq < 0 ? part : part.slice(0, eq)).toLowerCase();\n    const value = eq < 0 ? '' : part.slice(eq + 1);\n    if (!value) continue;                               // \"Mod=\", \"&nohd\" — carries no identity\n    let strip = STRIP_EXACT.has(name);\n    if (!strip && hostExtra) strip = hostExtra.indexOf(name) !== -1;\n    if (!strip) {\n      for (let p = 0; p < STRIP_PREFIX.length; p++) {\n        if (name.indexOf(STRIP_PREFIX[p]) === 0) { strip = true; break; }\n      }\n    }\n    if (strip) continue;\n    kept.push(part);\n  }\n  return path + (kept.length ? '?' + kept.join('&') : '') + hash;\n}\n\n\n// ---------------------------------------------------------------------------------------------\n// v28 — the HQ rule: a posting whose location is only \"Remote\" / \"United States\" (i.e. it reached\n// here with no state) counts only if the COMPANY's main address is in an allowed state.\n// ---------------------------------------------------------------------------------------------\nconst HQ_ALLOWED = new Set(['CA','CT','IL','DC','NJ','NY','RI','VA','MD','WA']);\nconst HQ_ALL_STATES = new Set(['AL','AK','AZ','AR','CA','CO','CT','DE','DC','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY']);\n\n// Hand-verified head offices. Precedence over anything scraped. Keyed by a lowercase substring of\n// the company name as it appears in the Companies tab.\n// ⚠️ Do NOT add an entry from a \"locations\"/\"offices\" page — that is what produced a wrong state for\n// one company. Verify the corporate/registered address, then add it here.\nconst COMPANY_HQ = {\n  // Three illustrative entries stand in for the ~24 hand-verified head offices\n  // the production map carries. Each real entry was checked against the\n  // company's own corporate address, never a \"locations\" or \"offices\" page —\n  // reading one of those is what produced a wrong state and a dropped board.\n  'example manufacturing': 'PA',   // head office outside the allowed states\n  'example engineering': 'CA',     // head office inside them\n  'example nonprofit': 'NY'\n};\n\n// v31 — operator: companies whose postings always carry their own address are OUT of the HQ rule.\n// One board is a clear case (200 of its 202 postings state a location), and a name search for it\n// returns a different organisation in another state entirely. A state-less\n// posting from one of these is kept exactly as it is — no lookup, no tag, no drop.\nconst HQ_SKIP = ['example charity'];   // companies whose postings always carry their own address\n\n// v34: \"scrape nationally\" boards (Probe's ALLOW_ALL_STATES_HOSTS) deliberately emit EVERY\n// posting with state:null — state is not how those companies are filtered, pay is. The v28 HQ\n// rule read that as a Remote/US-only posting, looked the company up, found its HQ\n// outside the 10 and dropped the WHOLE board: one board went 28 links -> 0 while the\n// execution still reported success. Keyed on the board host, not the name, so a renamed company\n// cannot silently fall back into the rule.\n// Several more \"Scrape Nationally\" boards are not filtered by state either, so their\n// state:null rows must not be read as Remote/US-only postings.\nconst HQ_SKIP_HOSTS = ['careers.example-hospital.org', 'jobs.example-university.edu'];\nfunction hqSkippedHost(boardLink) {\n  const h = ((String(boardLink || '').match(/^https?:\\/\\/([^\\/?#]+)/i) || [])[1] || '').toLowerCase();\n  if (!h) return false;\n  for (let i = 0; i < HQ_SKIP_HOSTS.length; i++) if (h.indexOf(HQ_SKIP_HOSTS[i]) !== -1) return true;\n  return false;\n}\nfunction hqSkipped(company) {\n  const c = String(company || '').toLowerCase().trim();\n  for (let i = 0; i < HQ_SKIP.length; i++) if (c.indexOf(HQ_SKIP[i]) !== -1) return true;\n  return false;\n}\n\nfunction hqFromOverride(company) {\n  const c = String(company || '').toLowerCase().trim();\n  if (!c) return null;\n  const keys = Object.keys(COMPANY_HQ);\n  for (let i = 0; i < keys.length; i++) if (c.indexOf(keys[i]) !== -1) return COMPANY_HQ[keys[i]];\n  return null;\n}\n\n// --- v29: find the company's main address. Footer of their own site first, then just search it. ---\nconst DECODO_AUTH = '<DECODO_BASIC_AUTH>';\nconst HQ_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';\n// ATS hosts carry the software vendor's address, not the employer's — never read one for HQ.\nconst HQ_ATS_HOST = /(paycomonline|ultipro|dayforcehcm|myworkdayjobs|icims|jobvite|applytojob|bamboohr|greenhouse|lever|rippling|adp\\.com|saashr|silkroad|jibecdn|successfactors|taleo|applitrack|paylocity|clearcompany|workable|breezy|recruitee|hrmdirect|ourcareerpages|selectminds|csod|ttcportals|dejobs|isolvedhire|applicantpro|applicantstack|entertimeonline|yourpayrollhr|neogov|governmentjobs|smartsearchonline|workstream|culinaryagents|apploi|gusto|paychex|cadienttalent|jazzhr)/i;\n\nfunction hqPlainText(html) {\n  return String(html || '')\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#x27;|&#39;/g, \"'\")\n    .replace(/\\s+/g, ' ');\n}\n// count every full \"City, ST ZIP\" by state\nfunction hqTally(text) {\n  const t = {};\n  const re = /,\\s*([A-Z]{2})[\\s,]+\\d{5}(?:-\\d{4})?\\b/g;\n  let m;\n  while ((m = re.exec(text)) !== null) if (HQ_ALL_STATES.has(m[1])) t[m[1]] = (t[m[1]] || 0) + 1;\n  return t;\n}\n// Their own page: the address at the bottom, or one the page labels as the head office.\n// This is trusted on a single hit — it is the company's own site, so it cannot be a different firm.\nfunction hqFromOwnPage(html) {\n  const text = hqPlainText(html);\n  const labelled = /(headquarter\\w*|corporate (?:office|headquarters)|main office|home office)[^.]{0,160}?,\\s*([A-Z]{2})[\\s,]+\\d{5}/i.exec(text);\n  if (labelled && HQ_ALL_STATES.has(labelled[2].toUpperCase())) return labelled[2].toUpperCase();\n  const footCodes = Object.keys(hqTally(text.slice(-2500)));   // the bottom of the page\n  if (footCodes.length === 1) return footCodes[0];\n  const allCodes = Object.keys(hqTally(text));\n  if (allCodes.length === 1) return allCodes[0];\n  return null;   // several offices, no label -> ambiguous\n}\n// Search results: accept only a corroborated answer (see the header note).\nfunction hqFromSearch(html) {\n  const t = hqTally(hqPlainText(html));\n  const ranked = Object.keys(t).map(function (k) { return [k, t[k]]; }).sort(function (a, b) { return b[1] - a[1]; });\n  if (!ranked.length) return null;\n  if (ranked[0][1] < 2) return null;                                   // one stray address proves nothing\n  if (ranked[1] && ranked[1][1] >= ranked[0][1]) return null;          // tie -> no clear answer\n  return ranked[0][0];\n}\n\n// ── v45: the \"HQ Addresses\" tab is the authority. A row whose State cell is filled settles the\n// company for free, instead of 5 own-site paths + 2 search engines through Decodo on every run.\n// ⚠️ Columns A:B ONLY — column D is a separately pasted list and does not line up with column A.\n// ⚠️ A company missing from the tab (most of them, while the operator fills it in) falls through to exactly\n// the old path, so this can never lose or mistag a posting.\nconst HQ_TAB = {};\ntry {\n  const hqRaw = $('Read HQ Addresses').first().json;\n  const hqRows = (hqRaw && hqRaw.values) || [];\n  for (let hi = 1; hi < hqRows.length; hi++) {            // row 0 is the header\n    const row = hqRows[hi] || [];\n    const nm = String(row[0] || '').trim().toLowerCase();\n    const st = String(row[1] || '').trim().toUpperCase();  // \"RI \" — the trim matters\n    if (nm && HQ_ALL_STATES.has(st)) HQ_TAB[nm] = st;\n  }\n} catch (eHQ) { /* node absent, empty or failed -> behave exactly as before */ }\n\nconst hqCache = {};\nasync function resolveHQ(company, boardLink) {\n  const key = String(company || boardLink || '').toLowerCase().trim();\n  if (Object.prototype.hasOwnProperty.call(hqCache, key)) return hqCache[key];\n  let hq = hqFromOverride(company);\n  if (!hq && HQ_TAB[key]) hq = HQ_TAB[key];      // v45: the sheet answers, nothing is fetched\n\n  // v43: Decodo bills premium at 2x standard (3x with JS). A company's own site is not a WAF'd\n  // ATS, so try the cheap pool first and escalate only if the answer looks empty or challenged.\n  // The two search engines DO need residential — they block a datacenter IP — so they force it.\n  const fetchHtml = async function (url, render, forcePremium) {\n    try {\n      if (render) {\n        const dsend = async function (premium) {\n          let r = await this.helpers.httpRequest({ url: 'https://scraper-api.decodo.com/v2/scrape', method: 'POST', body: premium ? { url: url, geo: 'United States', proxy_pool: 'premium' } : { url: url, geo: 'United States' }, json: true, headers: { Authorization: DECODO_AUTH, 'Content-Type': 'application/json', Accept: 'application/json' }, timeout: 90000 });\n          if (typeof r === 'string') r = JSON.parse(r);\n          return (r.results && r.results[0] && r.results[0].content) || '';\n        }.bind(this);\n        if (forcePremium) return await dsend(true);\n        let c = '';\n        try { c = await dsend(false); } catch (eS) { c = ''; }\n        if (c && c.length > 1500 && !/(aws-waf-token|Just a moment|Checking your browser|Attention Required|Access Denied)/i.test(c.slice(0, 4000))) return c;\n        return await dsend(true);\n      }\n      // ⚠️ ignoreHttpStatusErrors so a 404 is reported rather than thrown — a path that does not\n      // exist must NOT then be paid for as a render (5 paths are tried per company).\n      const r2 = await this.helpers.httpRequest({ url: url, method: 'GET', headers: { 'User-Agent': HQ_UA, Accept: 'text/html' }, timeout: 25000, returnFullResponse: true, ignoreHttpStatusErrors: true });\n      const st = (r2 && r2.statusCode) || 0;\n      const b = (r2 && typeof r2.body === 'string') ? r2.body : JSON.stringify((r2 && r2.body) || '');\n      return (st === 404 || st === 410) ? '\\u0000gone' : b;\n    } catch (e) { return ''; }\n  }.bind(this);\n\n  // 1. the company's own site, when the board actually lives on it\n  if (!hq) {\n    const host = (String(boardLink || '').match(/^https?:\\/\\/([^\\/?#]+)/i) || [])[1] || '';\n    if (host && !HQ_ATS_HOST.test(host)) {\n      const paths = ['/', '/headquarters', '/contact', '/contact-us', '/about'];\n      for (let i = 0; i < paths.length && !hq; i++) {\n        let h = await fetchHtml('https://' + host + paths[i], false);\n        if (h === '\\u0000gone') continue;                      // v43: the path does not exist — no render\n        if (!h || h.length < 1200) h = await fetchHtml('https://' + host + paths[i], true);\n        if (h && h.length > 800) hq = hqFromOwnPage(h);\n      }\n    }\n  }\n\n  // 2. otherwise just search for it, the way a person would\n  if (!hq && company) {\n    const queries = [\n      company + ' corporate headquarters main address',\n      company + ' company head office address located'\n    ];\n    for (let i = 0; i < queries.length && !hq; i++) {\n      const q = encodeURIComponent(queries[i]);\n      // DuckDuckGo's HTML endpoint throttles a server IP quickly, so both engines go via Decodo\n      const engines = ['https://html.duckduckgo.com/html/?q=' + q, 'https://www.bing.com/search?q=' + q];\n      for (let e = 0; e < engines.length && !hq; e++) {\n        const h = await fetchHtml(engines[e], true, true);   // v43: search engines block datacenter IPs\n        if (h && h.length > 800) hq = hqFromSearch(h);\n      }\n    }\n  }\n\n  hqCache[key] = hq || null;\n  return hqCache[key];\n}\n\nconst out = [];\nconst dateStr = new Date().toLocaleString('en-US', {\n  timeZone: 'Asia/Manila',\n  month: '2-digit', day: '2-digit', year: '2-digit',\n  hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true\n}).replace(',', '');\nfor (const item of $input.all()) {\n  const j = item.json;\n  const jobs = Array.isArray(j.jobs) ? j.jobs : [];\n  if (!jobs.length) {\n    out.push({ json: { links_found: false, record_id: j.record_id, company: j.company, fetch_ok: j.fetch_ok, fetch_error: j.fetch_error || '', total_found: j.total_found || 0 } });\n    continue;\n  }\n  const seenUrls = new Set();\n  const outStart = out.length;   // v45: see the dead-end note below\n  // v28: resolve the company's main address once, but only if this company actually has a\n  // state-less (\"Remote\" / \"United States\") posting — no lookup, no cost, for normal boards.\n  let hqState = null, hqChecked = false;\n  if (!hqSkipped(j.company) && !hqSkippedHost(j.job_link || j.sheet_link) && jobs.some(function (x) { return !x.state; })) {\n    hqState = await resolveHQ.call(this, j.company, j.job_link || j.sheet_link);\n    hqChecked = true;\n  }\n  let hqDropped = 0;\n  for (const job of jobs) {\n    if (!job.state && hqChecked) {\n      if (hqState && !HQ_ALLOWED.has(hqState)) { hqDropped++; continue; }   // HQ outside the 10 -> not ours\n      if (hqState) job.state = hqState;                                     // HQ allowed -> include, tagged\n      // hqState null = HQ could not be established: keep exactly as before, and report it below\n    }\n    const url = cleanJobUrl(job.url);\n    if (typeof url === 'string' && url) {\n      if (seenUrls.has(url)) continue;                  // cards that differed only by tracking params\n      seenUrls.add(url);\n    }\n    out.push({ json: { links_found: true, record_id: j.record_id, Date: dateStr, Company: j.company, Link: url,\n      hq_state: hqChecked ? (hqState || '') : '', hq_unresolved: hqChecked && !hqState ? j.company : '', hq_dropped: hqDropped } });\n  }\n  // ⚠️ v45: every posting dropped by the HQ rule => nothing pushed => this node would emit ZERO\n  // items for the company, and \"Links Found?\" has nothing to route — so Stamp Status, Update\n  // Progress and the loop-back never run and the batch stalls while reporting success. Emit the\n  // same marker the no-jobs path emits, so the company is stamped and the loop advances.\n  if (out.length === outStart) {\n    out.push({ json: { links_found: false, record_id: j.record_id, company: j.company, fetch_ok: j.fetch_ok,\n      fetch_error: j.fetch_error || '', total_found: j.total_found || 0,\n      hq_state: hqChecked ? (hqState || '') : '', hq_dropped: hqDropped } });\n  }\n}\nreturn out;\n"
+      },
+      "name": "Format Sheet Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        392
+      ],
+      "id": "7b4ce9fe-c625-5efb-8460-4977b519c4fc"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "links-found",
+              "leftValue": "={{ $json.links_found }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Links Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1072,
+        392
+      ],
+      "id": "93735f8e-2ccd-5d0f-8900-632ae9fa729a"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/<CONTROL_SHEET_ID>/values/Database!A:E:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: $input.all().map(i => [i.json.Date, i.json.Company, i.json.Link, \"\", \"\"]) }) }}",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "name": "Append Links to NEW LINKS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1296,
+        296
+      ],
+      "executeOnce": true,
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000,
+      "onError": "continueErrorOutput",
+      "id": "fcdfefe1-9d1e-54d8-8729-e7a8b9169671",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "googleSheetsOAuth2Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "<CONTROL_SHEET_ID>",
+          "mode": "list",
+          "cachedResultName": "NEW LINKS"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 195798639,
+          "mode": "list",
+          "cachedResultName": "Companies",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/<CONTROL_SHEET_ID>/edit#gid=195798639"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Company": "={{ $('Loop (rate limit)').item.json.company }}",
+            "Last Update": "={{ $now.setZone('Asia/Manila').toFormat('M/d/yyyy h:mm a') }}",
+            "Priority": "",
+            "Job Link": "={{ $('Loop (rate limit)').item.json.sheet_link }}"
+          },
+          "matchingColumns": [
+            "Job Link"
+          ],
+          "schema": [
+            {
+              "id": "Company",
+              "displayName": "Company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Job Link",
+              "displayName": "Job Link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Last Update",
+              "displayName": "Last Update",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Priority",
+              "displayName": "Priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "name": "Stamp Status (Fetched At)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1520,
+        392
+      ],
+      "executeOnce": true,
+      "retryOnFail": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "maxTries": 4,
+      "waitBetweenTries": 5000,
+      "id": "b5ed7ed0-94bd-5dc5-8499-0e5ca2ee98d1",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "googleSheetsOAuth2Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/<CONTROL_SHEET_ID>/values/Companies!G{{ $('Loop (rate limit)').item.json.queue_pos + 1 }}?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [[ $('Format Sheet Rows').all().filter(i => i.json.links_found).length ]] }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "Update Progress",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2192,
+        536
+      ],
+      "executeOnce": true,
+      "onError": "continueRegularOutput",
+      "id": "627cace8-fce0-5a81-99ee-b32cf47a6948",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "googleSheetsOAuth2Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "is-api",
+              "leftValue": "={{ $json.is_api }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Is API ATS?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -272,
+        464
+      ],
+      "id": "c7b978dd-4683-52a2-b247-171bfb009a8b"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const ALLOWED = new Set(['CA','CT','IL','DC','NJ','NY','RI','VA','MD','WA']);\nconst ALL_STATES = new Set(['AL','AK','AZ','AR','CA','CO','CT','DE','DC','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY']);\nconst V27_NAME2CODE = { 'alabama':'AL','alaska':'AK','arizona':'AZ','arkansas':'AR','california':'CA','colorado':'CO','connecticut':'CT','delaware':'DE','district of columbia':'DC','florida':'FL','georgia':'GA','hawaii':'HI','idaho':'ID','illinois':'IL','indiana':'IN','iowa':'IA','kansas':'KS','kentucky':'KY','louisiana':'LA','maine':'ME','maryland':'MD','massachusetts':'MA','michigan':'MI','minnesota':'MN','mississippi':'MS','missouri':'MO','montana':'MT','nebraska':'NE','nevada':'NV','new hampshire':'NH','new jersey':'NJ','new mexico':'NM','new york':'NY','north carolina':'NC','north dakota':'ND','ohio':'OH','oklahoma':'OK','oregon':'OR','pennsylvania':'PA','rhode island':'RI','south carolina':'SC','south dakota':'SD','tennessee':'TN','texas':'TX','utah':'UT','vermont':'VT','virginia':'VA','washington':'WA','west virginia':'WV','wisconsin':'WI','wyoming':'WY' };\nconst V27_NAME_RE = new RegExp('\\\\b(' + Object.keys(V27_NAME2CODE).sort(function (a, b) { return b.length - a.length; }).join('|') + ')\\\\b', 'gi');\n// Companies where an ADP posting with an EMPTY requisitionLocations must NOT have its state\n// guessed from the job title — it goes to the HQ rule instead. Decided per company.\nconst ADP_TITLE_STATE_SKIP = ['example nonprofit'];\n// States named in a job TITLE. Used only for postings the ATS gives no location for at all.\nfunction statesInTitle(title) {\n  const found = [];\n  V27_NAME_RE.lastIndex = 0;\n  let nm;\n  while ((nm = V27_NAME_RE.exec(String(title || ''))) !== null) {\n    const c = V27_NAME2CODE[nm[1].toLowerCase()];\n    if (c && found.indexOf(c) === -1) found.push(c);\n  }\n  return found;\n}\n// UKG job-board URLs carry the recruiter's saved facets as f4=<tok>+<tok>+... where each token is a\n// urlsafe-base64 GUID with the first three groups little-endian (standard .NET Guid.ToByteArray).\nfunction ukgFacetIds(u) {\n  const m = String(u || '').match(/[?&]f4=([^&]+)/);\n  if (!m) return [];\n  return m[1].split(/[+ ]/).filter(Boolean).map(function (tok) {\n    try {\n      const b = Buffer.from(tok.replace(/-/g, '+').replace(/_/g, '/') + '==', 'base64');\n      if (b.length < 16) return null;\n      const h = b.toString('hex');\n      const le = function (s) { return s.match(/../g).reverse().join(''); };\n      return le(h.slice(0, 8)) + '-' + le(h.slice(8, 12)) + '-' + le(h.slice(12, 16)) + '-' + h.slice(16, 20) + '-' + h.slice(20, 32);\n    } catch (e) { return null; }\n  }).filter(Boolean);\n}\nconst item = $input.item.json;\nconst link = item.job_link;\nconst jobs = [];\nlet fetch_ok = true, fetch_error = '', totalSeen = 0;\n\nfunction pushJob(url, state, title) {\n  totalSeen++;\n  if (state && !ALLOWED.has(state)) return;\n  jobs.push({ url: url, state: state, title: title });\n}\n\n// Transient network faults (DNS blips, resets, gateway hiccups) used to zero a company for the\n// whole run: one throw here meant 0 links and a fresh timestamp, so the miss looked like an empty\n// board. One board lost 18 CA openings to a single EAI_AGAIN.\nconst TRANSIENT_RE = /EAI_AGAIN|ENOTFOUND|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|socket hang up|network|timeout|502|503|504|429/i;\nconst apiReq = async function (opts) {\n  let lastErr = null;\n  for (let attempt = 0; attempt < 4; attempt++) {\n    try {\n      return await this.helpers.httpRequest(opts);\n    } catch (e) {\n      lastErr = e;\n      const msg = (e && (e.message || e.description)) ? String(e.message || e.description) : String(e);\n      const code = (e && e.code) ? String(e.code) : '';\n      if (!TRANSIENT_RE.test(msg + ' ' + code)) throw e;\n      await new Promise(function (r) { setTimeout(r, 1500 * (attempt + 1)); });\n    }\n  }\n  throw lastErr;\n}.bind(this);\n\ntry {\n  if (/workforcenow\\.adp\\.com/i.test(link)) {\n    const cid = (link.match(/[?&]cid=([0-9a-fA-F-]+)/) || [])[1];\n    const ccId = (link.match(/[?&]ccId=(\\w+)/i) || [])[1] || '19000101_000001';\n    if (!cid) throw new Error('No cid found in ADP link');\n    // v34: ADP silently caps $top — it returns 19 rows for\n    // $top=100 — and the next page's $skip window OVERLAPS by one requisition, so any board\n    // bigger than that cap collected a duplicate link. One board shipped 33 links for the 32\n    // jobs meta.totalNumber reports. Dedupe on itemID and stop once we hold them all.\n    const adpSeen = new Set();\n    let skip = 0, total = 1, pages = 0;\n    while (skip < total && pages < 40) {\n      const api = 'https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions?cid=' + cid + '&ccId=' + ccId + '&locale=en_US&$top=100&$skip=' + skip;\n      let data = await apiReq({ url: api, method: 'GET', headers: { Accept: 'application/json' }, timeout: 60000 });\n      if (typeof data === 'string') data = JSON.parse(data);\n      total = (data.meta && data.meta.totalNumber) || 0;\n      const reqs = data.jobRequisitions || [];\n      if (!reqs.length) break;\n      for (const r of reqs) {\n        if (adpSeen.has(r.itemID)) continue;\n        adpSeen.add(r.itemID);\n        const states = [];\n        for (const l of (r.requisitionLocations || [])) {\n          let cs = l.address && l.address.countrySubdivisionLevel1 && l.address.countrySubdivisionLevel1.codeValue;\n          // v30: some ADP postings ship an EMPTY address while the location a\n          // human sees sits in nameCode.shortName (\"Raleigh, NC, US\") — 2 North Carolina sales\n          // roles were kept as state-unknown, and that HQ being in CA would have tagged them.\n          if (!cs && l.nameCode && l.nameCode.shortName) {\n            const nm = String(l.nameCode.shortName).match(/,\\s*([A-Za-z]{2})\\s*(?:,\\s*(?:US|USA|United States))?\\s*$/i);\n            if (nm && ALL_STATES.has(nm[1].toUpperCase())) cs = nm[1];\n          }\n          if (cs && states.indexOf(String(cs).toUpperCase()) === -1) states.push(String(cs).toUpperCase());\n        }\n        let allowedSt = states.filter(function (s) { return ALLOWED.has(s); });\n        let state = allowedSt.length ? allowedSt[0] : (states[0] || null);\n        // v27: some ADP postings ship an EMPTY requisitionLocations, and a null state is\n        // kept — so territory roles for other states rode along. When the ATS gives no location at\n        // all, fall back to any state named in the title; drop only if every one is non-allowed.\n        // A posting whose ATS gives NO location must reach the HQ rule for these\n        // companies, rather than be dropped on a state that only appears in its\n        // title. Every other company keeps the v27/v34 behaviour.\n        if (!states.length && !ADP_TITLE_STATE_SKIP.some(function (n) { return String(item.company || '').toLowerCase().indexOf(n) !== -1; })) {\n          const tSt = statesInTitle(r.requisitionTitle || '');\n          if (tSt.length) {\n            const tAllowed = tSt.filter(function (s) { return ALLOWED.has(s); });\n            if (!tAllowed.length) { totalSeen++; continue; }\n            state = tAllowed[0];\n          }\n        }\n        const url = 'https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=' + cid + '&ccId=' + ccId + '&lang=en_US&jobId=' + encodeURIComponent(r.itemID);\n        pushJob(url, state, r.requisitionTitle || '');\n      }\n      skip += reqs.length;\n      pages++;\n      if (total && adpSeen.size >= total) break;\n    }\n  } else {\n    const m = link.match(/^(https?:\\/\\/[^\\/]+)\\/([^\\/]+)\\/JobBoard\\/([0-9a-fA-F-]+)/i);\n    if (!m) throw new Error('Unrecognized UKG job board link');\n    const origin = m[1], tenant = m[2], boardId = m[3];\n    const api = origin + '/' + tenant + '/JobBoard/' + boardId + '/JobBoardView/LoadSearchResults';\n    // v27: the sheet URL's saved f4= location facet was being ignored, so the collector\n    // read the entire 182-posting board instead of the filtered view the recruiter published.\n    const ukgLocIds = ukgFacetIds(link);\n    const ukgFilters = ukgLocIds.length ? [{ t: 'TermsSearchFilterDto', fieldName: 4, extra: null, values: ukgLocIds }] : [];\n    let skipN = 0, totalCount = 1, pages = 0;\n    while (skipN < totalCount && pages < 40) {\n      const body = {\n        opportunitySearch: { Top: 100, Skip: skipN, QueryString: '', OrderBy: [{ Value: 'postedDateDesc', PropertyName: 'PostedDate', Ascending: false }], Filters: ukgFilters },\n        matchCriteria: { PreferredJobs: [], Educations: [], LicenseAndCertifications: [], Skills: [], hasNoLicenses: false, SkippedSkills: [] }\n      };\n      let data = await apiReq({ url: api, method: 'POST', body: body, json: true, headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, timeout: 60000 });\n      if (typeof data === 'string') data = JSON.parse(data);\n      totalCount = data.totalCount || 0;\n      let opps = data.opportunities || [];\n      // A stale saved facet (locations since renamed/removed) would otherwise zero the company.\n      if (!opps.length && skipN === 0 && ukgFilters.length) {\n        body.opportunitySearch.Filters = [];\n        let d2 = await apiReq({ url: api, method: 'POST', body: body, json: true, headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, timeout: 60000 });\n        if (typeof d2 === 'string') d2 = JSON.parse(d2);\n        totalCount = d2.totalCount || 0;\n        opps = d2.opportunities || [];\n      }\n      if (!opps.length) break;\n      for (const o of opps) {\n        // only US locations count; jobs with ALL locations outside the US are dropped\n        const states = [];\n        let usLoc = 0, locCount = 0;\n        for (const l of (o.Locations || [])) {\n          locCount++;\n          const ctry = String((l.Address && l.Address.Country && (l.Address.Country.Code || l.Address.Country.Name)) || '').toUpperCase();\n          if (ctry && ctry !== 'USA' && ctry !== 'US' && ctry !== 'UNITED STATES') continue;\n          usLoc++;\n          const code = l.Address && l.Address.State && l.Address.State.Code;\n          const cu = code ? String(code).toUpperCase() : '';\n          if (/^[A-Z]{2}$/.test(cu) && ALL_STATES.has(cu) && states.indexOf(cu) === -1) states.push(cu);\n        }\n        if (locCount && !usLoc) { totalSeen++; continue; }\n        const allowedSt = states.filter(function (s) { return ALLOWED.has(s); });\n        if (states.length && !allowedSt.length) { totalSeen++; continue; }\n        const state = allowedSt[0] || null;\n        const url = origin + '/' + tenant + '/JobBoard/' + boardId + '/OpportunityDetail?opportunityId=' + o.Id;\n        pushJob(url, state, o.Title || '');\n      }\n      skipN += opps.length;\n      pages++;\n    }\n  }\n} catch (e) {\n  fetch_ok = jobs.length > 0;\n  fetch_error = (e && e.message) ? e.message : String(e);\n}\n\nreturn { json: Object.assign({}, item, { fetch_ok: fetch_ok, fetch_error: fetch_error, total_found: totalSeen, jobs: jobs }) };"
+      },
+      "name": "API Collect Links",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        320
+      ],
+      "id": "71b73842-5038-5bdd-b136-5f1f9bd0da31"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// ─────────────────────────────────────────────────────────────────────────────\n// Probe Careers API — REDUCED PUBLIC VERSION\n//\n// The production node is ~386 KB: one dispatcher plus close to 40 hand-written\n// handlers, each keyed to the hosts of a specific client's target boards. That\n// host roster is the client's book of business, so it is not published.\n//\n// What is kept here is everything that is about ENGINEERING rather than about\n// which employers were being watched:\n//   · the input/output contract, unchanged\n//   · the state scanner, verbatim, including the two disambiguation fixes that\n//     took the longest to get right\n//   · the Decodo cost-tier escalation, verbatim, which is what produced the\n//     42% scraping-cost reduction on the case study\n//   · two representative handlers (the Greenhouse boards API and a generic\n//     JSON-LD reader) in place of the ~40 real ones, to show dispatcher shape\n//\n// Contract:\n//   in   { job_link, company, ... }        one row per company board\n//   out  { ...item, fetch_ok, fetch_error, total_found, jobs: [{url,title,state}] }\n// ─────────────────────────────────────────────────────────────────────────────\n\nconst ALLOWED = new Set(['CA', 'CT', 'IL', 'DC', 'NJ', 'NY', 'RI', 'VA', 'MD', 'WA']);\nconst ALL_STATES = new Set(['AL','AK','AZ','AR','CA','CO','CT','DE','DC','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY']);\nconst NAME2CODE = { 'alabama':'AL','alaska':'AK','arizona':'AZ','arkansas':'AR','california':'CA','colorado':'CO','connecticut':'CT','delaware':'DE','district of columbia':'DC','florida':'FL','georgia':'GA','hawaii':'HI','idaho':'ID','illinois':'IL','indiana':'IN','iowa':'IA','kansas':'KS','kentucky':'KY','louisiana':'LA','maine':'ME','maryland':'MD','massachusetts':'MA','michigan':'MI','minnesota':'MN','mississippi':'MS','missouri':'MO','montana':'MT','nebraska':'NE','nevada':'NV','new hampshire':'NH','new jersey':'NJ','new mexico':'NM','new york':'NY','north carolina':'NC','north dakota':'ND','ohio':'OH','oklahoma':'OK','oregon':'OR','pennsylvania':'PA','rhode island':'RI','south carolina':'SC','south dakota':'SD','tennessee':'TN','texas':'TX','utah':'UT','vermont':'VT','virginia':'VA','washington':'WA','west virginia':'WV','wisconsin':'WI','wyoming':'WY' };\nconst NAME_RE = new RegExp('\\\\b(' + Object.keys(NAME2CODE).sort(function (a, b) { return b.length - a.length; }).join('|') + ')\\\\b', 'gi');\n\n// Some boards are not filtered by state at all — every US posting counts — so the\n// handler must not drop on state. Keyed on host, not company name, so a rename\n// cannot silently put a board back inside the rule.\nconst ALLOW_ALL_STATES_HOSTS = ['careers.example-hospital.org', 'jobs.example-university.edu'];\nconst UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';\n\nconst item = $input.item.json;\nconst link = item.job_link;\n\n// ── State detection ──────────────────────────────────────────────────────────\n// A bare [A-Z]{2} that happens to be a state code is not proof of a state:\n// \"(South LA)\" and \"LA County\" both resolved to Louisiana and deleted real\n// Los Angeles jobs. STRONG = a spelled-out name, or a code in address context\n// (comma before / ZIP after). scanStatesText returns both buckets.\nconst V37_CONNECTORS = /^(in|at|of|for|to|and|or|from|near|the|greater|remote|onsite|hybrid|within|across|serving|throughout|state|states|county|counties|city|area|region|west|east|north|south|central|northern|southern|eastern|western)$/i;\nfunction v37NextState(post) {\n  const cm = post.match(/^\\s*,\\s*([A-Za-z]{2})(?=[\\s,;|).\\/-]|$)/);\n  if (cm && ALL_STATES.has(cm[1].toUpperCase())) return cm[1].toUpperCase();\n  const nm2 = post.match(/^\\s*,\\s*([A-Za-z][A-Za-z ]{2,20}?)(?=[\\s,;|).\\/-]|\\d|$)/);\n  if (nm2) { const c = NAME2CODE[nm2[1].trim().toLowerCase()]; if (c) return c; }\n  return null;\n}\n// \"Port Washington, WI\" and \"Fort Washington, Pennsylvania\" both scanned as WASHINGTON,\n// filing 31 postings in the wrong state. A state NAME is the CITY, not the state, when\n// it is (a) preceded with no separator by a capitalised word that is not a connector,\n// and (b) immediately followed by \", <another state>\". It can only demote a name that a\n// more specific state token follows, and that token is added in its place, so no window\n// that resolves today comes back empty.\nfunction v37IsCityName(textWin, index, matched, code) {\n  const pre = textWin.slice(Math.max(0, index - 30), index);\n  const preWordM = pre.match(/([A-Za-z][A-Za-z.'-]*)\\s+$/);\n  if (!preWordM) return false;\n  const w = preWordM[1];\n  if (w !== w.toUpperCase() && w[0] !== w[0].toUpperCase()) return false;\n  if (V37_CONNECTORS.test(w.replace(/[.'-]/g, ''))) return false;\n  const next = v37NextState(textWin.slice(index + matched.length, index + matched.length + 30));\n  return !!next && next !== code;\n}\n// \"Washington, District of Columbia\" and \"Washington, D.C.\" are the CITY Washington,\n// not Washington State. Normalising the phrase before the scan removes the \"washington\"\n// token and leaves \"district of columbia\", which resolves to DC. Both are allowed states,\n// so this can only ever change a label, never a keep/drop decision.\nfunction v38DcNormalise(t) {\n  return String(t || '').replace(/\\bwashington\\b\\s*,?\\s*(?:d\\.?\\s*c\\.?|district\\s+of\\s+columbia)\\b/gi, 'District of Columbia');\n}\nfunction scanStatesText(textWin) {\n  const strong = [];\n  const weak = [];\n  // ';' and '|' are separators too — \"Orlando, FL; Memphis, TN; Dallas, TX;\" matched\n  // NOTHING, so a posting naming three non-allowed states was kept as state-unknown.\n  textWin = v38DcNormalise(textWin);\n  const codeRe = /([,;|\\s(\\/-])([A-Z]{2})(?=[\\s,;|).\\/-]|$)/g;\n  let cm;\n  while ((cm = codeRe.exec(textWin)) !== null) {\n    const code = cm[2];\n    if (!ALL_STATES.has(code)) continue;\n    const after = textWin.slice(cm.index + cm[0].length, cm.index + cm[0].length + 12);\n    const before = textWin.slice(Math.max(0, cm.index - 40), cm.index + 1);\n    const bucket = (/,\\s*$/.test(before) || /^[\\s,]*\\d{5}(?:-\\d{4})?\\b/.test(after)) ? strong : weak;\n    if (bucket.indexOf(code) === -1) bucket.push(code);\n  }\n  NAME_RE.lastIndex = 0;\n  let nm;\n  while ((nm = NAME_RE.exec(textWin)) !== null) {\n    const code = NAME2CODE[nm[1].toLowerCase()];\n    if (!code) continue;\n    if (v37IsCityName(textWin, nm.index, nm[1], code)) continue;\n    if (strong.indexOf(code) === -1) strong.push(code);\n  }\n  const all = strong.slice();\n  for (let i = 0; i < weak.length; i++) if (all.indexOf(weak[i]) === -1) all.push(weak[i]);\n  return { all: all, strong: strong };\n}\nfunction detectStatesText(textWin) { return scanStatesText(textWin).all; }\n// True only when the text names a real, non-allowed state — i.e. safe grounds to drop.\nfunction strongNotAllowed(textWin) {\n  const r = scanStatesText(textWin);\n  if (r.all.filter(function (s) { return ALLOWED.has(s); }).length) return false;\n  return r.strong.filter(function (s) { return !ALLOWED.has(s); }).length > 0;\n}\n\n// ── Decodo cost-tier escalation ──────────────────────────────────────────────\n// Decodo costs 3x on premium+JS vs standard. Send the STANDARD pool first and\n// escalate only when the answer is unusable — the same fallback shape as\n// direct → Jina → Decodo, so nothing that resolves today can stop resolving,\n// and a wrong guess costs one cheap request. This is the change that cut\n// scraping spend by 42% with no loss of coverage.\n//\n// Judge the answer by SHAPE, never by emptiness: the bot-challenge pages that\n// caused the worst misses were all NON-EMPTY. When unsure, escalate.\nconst DECODO_AUTH = '<DECODO_BASIC_AUTH>';   // read from an n8n credential, never inline\nconst DECODO_PREMIUM_HOSTS = /(example-retailer\\.com|example-staffing\\.com)/i;  // measured, not guessed\nconst DECODO_CHALLENGE = /(aws-waf-token|awswaf|Just a moment|cf-browser-verification|Checking your browser|Attention Required|Request unsuccessful|px-captcha|_pxhd|Pardon Our Interruption|challenge-platform|Incapsula|Access Denied)/i;\nlet DECODO_SD = null;\ntry { const sd = $getWorkflowStaticData('global'); sd.tier = sd.tier || {}; DECODO_SD = sd.tier; } catch (eSD) { DECODO_SD = {}; }\nDECODO_SD.premiumHosts = DECODO_SD.premiumHosts || {};\n\n// Code nodes are killed at 300 s, so retrying is abandoned once the node has already\n// been running this long; a slow board must never be pushed over the limit by a retry\n// meant for a flaky one.\nconst DECODO_T0 = Date.now();\nconst DECODO_RETRY_UNTIL_MS = 200000;\nfunction decodoHostOf(u) {\n  const m = String(u || '').match(/^https?:\\/\\/([^\\/?#]+)/i);\n  return m ? m[1].toLowerCase().replace(/^www\\./, '') : '';\n}\n// A learned escalation expires after 7 days, so a site that has since dropped its WAF\n// goes back to the cheap pool instead of being pinned to premium forever by one bad\n// afternoon.\nfunction decodoWantsPremium(u) {\n  if (DECODO_PREMIUM_HOSTS.test(String(u || ''))) return true;\n  const h = decodoHostOf(u);\n  const ts = h && DECODO_SD.premiumHosts[h];\n  if (!ts) return false;\n  if (Date.now() - ts > 7 * 864e5) { delete DECODO_SD.premiumHosts[h]; return false; }\n  return true;\n}\nfunction decodoUsable(content) {\n  const s = String(content || '');\n  if (!s) return false;\n  if (DECODO_CHALLENGE.test(s.slice(0, 4000))) return false;\n  const t = s.trim();\n  // a valid JSON/XML answer is good at ANY length — several handlers read tiny API replies\n  if (t.charAt(0) === '{' || t.charAt(0) === '[') { try { JSON.parse(t); return true; } catch (eJ) { return false; } }\n  if (/^<\\?xml|^<urlset|^<sitemapindex/i.test(t)) return true;\n  return s.length >= 1500;\n}\nconst decodoReq = async function (body, timeout) {\n  const send = async function (premium) {\n    let r = await this.helpers.httpRequest({\n      url: 'https://scraper-api.decodo.com/v2/scrape', method: 'POST',\n      body: premium ? Object.assign({}, body, { proxy_pool: 'premium' }) : body,\n      json: true,\n      headers: { Authorization: DECODO_AUTH, 'Content-Type': 'application/json', Accept: 'application/json' },\n      timeout: timeout || 120000\n    });\n    if (typeof r === 'string') r = JSON.parse(r);\n    return r;\n  }.bind(this);\n  // ONE retry on a THROWN call. Twelve boards once reported failures on a single\n  // afternoon and every one came back clean on a plain re-run the next day: they were\n  // transient, and they clustered in contiguous batch positions, i.e. bad minutes\n  // rather than bad boards. Deliberately narrow — retries only a thrown call, so the\n  // usable/unusable CONTENT decision and the standard→premium escalation are untouched;\n  // one extra attempt, so a hard-down host costs 2 calls, not 3+; and bounded by the\n  // node-wide wall clock above.\n  const decodoRetry = async function (premium) {\n    try {\n      return await send(premium);\n    } catch (e1) {\n      if (Date.now() - DECODO_T0 > DECODO_RETRY_UNTIL_MS) throw e1;\n      DECODO_SD.retries = (DECODO_SD.retries || 0) + 1;\n      await new Promise(function (r) { setTimeout(r, 2000); });\n      return await send(premium);\n    }\n  }.bind(this);\n  if (decodoWantsPremium(body && body.url)) return await decodoRetry(true);\n  let first = null;\n  try { first = await decodoRetry(false); } catch (eStd) { first = null; }\n  const got = (first && first.results && first.results[0] && first.results[0].content) || '';\n  if (decodoUsable(got)) return first;\n  const h = decodoHostOf(body && body.url);\n  if (h) DECODO_SD.premiumHosts[h] = Date.now();   // remember: go straight to premium next run\n  return await decodoRetry(true);\n}.bind(this);   // the OUTER function needs the bind too — send() reads this.helpers through it\n\nconst httpGet = async function (url, hdrs, tmo) {\n  return await this.helpers.httpRequest({\n    url: url, method: 'GET',\n    headers: Object.assign({ 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.9' }, hdrs || {}),\n    timeout: tmo || 60000\n  });\n}.bind(this);\n\nconst ok = function (jobs, total) {\n  return { json: Object.assign({}, item, { fetch_ok: true, fetch_error: '', total_found: total != null ? total : jobs.length, jobs: jobs }) };\n};\nconst fail = function (e) {\n  return { json: Object.assign({}, item, { fetch_ok: false, fetch_error: String((e && e.message) || e), total_found: 0, jobs: [] }) };\n};\nconst allowAllStates = ALLOW_ALL_STATES_HOSTS.some(function (h) { return String(link || '').indexOf(h) !== -1; });\n// A posting is kept when it names an allowed state, or names no state at all\n// (those go on to the HQ rule downstream). It is dropped only on strong evidence\n// of a state outside the list.\nfunction keepByState(text) {\n  if (allowAllStates) return { keep: true, state: null };\n  const win = ' ' + String(text || '') + ' ';\n  const sts = detectStatesText(win);\n  const allowed = sts.filter(function (s) { return ALLOWED.has(s); });\n  if (allowed.length) return { keep: true, state: allowed[0] };\n  if (sts.length || strongNotAllowed(win)) return { keep: false, state: null };\n  return { keep: true, state: null };\n}\n\n// ── Handler dispatch ─────────────────────────────────────────────────────────\n// In production this is a chain of close to 40 branches, one per site type, each\n// matching on the board URL and returning through ok() / fail(). Adding a site\n// means adding a branch; nothing else in the pipeline changes. Two representative\n// branches follow.\n\n// ---- Greenhouse hosted boards: the official boards-api returns every job with\n//      location.name in a single call, so no HTML parsing is needed at all. ----\nconst ghbM = String(link || '').match(/^https?:\\/\\/(?:job-boards|boards)(?:\\.eu)?\\.greenhouse\\.io\\/([A-Za-z0-9_-]+)/i);\nif (ghbM) {\n  try {\n    let d = await httpGet('https://boards-api.greenhouse.io/v1/boards/' + ghbM[1].toLowerCase() + '/jobs?content=false', { Accept: 'application/json' });\n    if (typeof d === 'string') d = JSON.parse(d);\n    const list = (d && d.jobs) || [];\n    if (!list.length) throw new Error('greenhouse boards-api: empty');\n    const jobs = [];\n    const seen = new Set();\n    for (const j of list) {\n      const id = j.id || j.absolute_url;\n      if (!id || seen.has(id)) continue;\n      seen.add(id);\n      const verdict = keepByState((j.location && j.location.name) || '');\n      if (!verdict.keep) continue;\n      jobs.push({\n        url: j.absolute_url || ('https://job-boards.greenhouse.io/' + ghbM[1].toLowerCase() + '/jobs/' + j.id),\n        state: verdict.state,\n        title: String(j.title || '').trim().slice(0, 120)\n      });\n    }\n    return ok(jobs, list.length);\n  } catch (e) { return fail(e); }\n}\n\n// ---- Generic JSON-LD fallback: any board that server-renders schema.org\n//      JobPosting blocks. Tried directly first, then through Decodo if the page\n//      is a JS shell or answers with a bot challenge. ----\ntry {\n  let html = '';\n  try { html = String(await httpGet(link)); } catch (eDirect) { html = ''; }\n  if (!decodoUsable(html)) {\n    const resp = await decodoReq({ url: link, geo: 'United States' }, 120000);\n    html = (resp && resp.results && resp.results[0] && resp.results[0].content) || '';\n  }\n  if (!html) throw new Error('no content after escalation');\n\n  const jobs = [];\n  const seen = new Set();\n  const ldRe = /<script[^>]+application\\/ld\\+json[^>]*>([\\s\\S]*?)<\\/script>/gi;\n  let ld;\n  while ((ld = ldRe.exec(html)) !== null) {\n    let parsed;\n    try { parsed = JSON.parse(ld[1].trim()); } catch (eLd) { continue; }\n    const blocks = Array.isArray(parsed) ? parsed : [parsed];\n    for (const b of blocks) {\n      if (!b || b['@type'] !== 'JobPosting') continue;\n      const url = b.url || b.sameAs || '';\n      if (!url || seen.has(url)) continue;\n      seen.add(url);\n      const loc = b.jobLocation;\n      const addr = (Array.isArray(loc) ? loc[0] : loc) || {};\n      const region = (addr.address && (addr.address.addressRegion || addr.address.addressLocality)) || '';\n      const verdict = keepByState(region || b.title || '');\n      if (!verdict.keep) continue;\n      jobs.push({ url: url, state: verdict.state, title: String(b.title || '').trim().slice(0, 120) });\n    }\n  }\n  if (!seen.size) throw new Error('no JSON-LD JobPosting blocks found');\n  return ok(jobs);\n} catch (e) { return fail(e); }\n"
+      },
+      "name": "Probe Careers API",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        536
+      ],
+      "id": "85544bde-288d-5278-a196-1d7b1397a528",
+      "notes": "Reduced for public release: ~40 client-specific site handlers replaced by two representative ones. See README.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "jibe-ok",
+              "leftValue": "={{ $json.jibe_ok }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Careers API OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        176,
+        536
+      ],
+      "id": "f7e61746-a0aa-5857-ae4d-2c361471d3fa"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "<AIRTABLE_COMPANIES_BASE>",
+          "mode": "list",
+          "cachedResultName": "Companies",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_COMPANIES_BASE>"
+        },
+        "table": {
+          "__rl": true,
+          "value": "<AIRTABLE_COMPANIES_TABLE>",
+          "mode": "list",
+          "cachedResultName": "Assignments",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_COMPANIES_BASE>/<AIRTABLE_COMPANIES_TABLE>"
+        },
+        "filterByFormula": "={{ '{Company} = \"' + $('Loop (rate limit)').item.json.company.replace(/\"/g, '') + '\"' }}",
+        "returnAll": false,
+        "limit": 1,
+        "options": {}
+      },
+      "name": "Find Airtable Record",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        1744,
+        392
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "onError": "continueRegularOutput",
+      "id": "f1291619-4f37-59ec-8873-9b8ed4410fdf",
+      "credentials": {
+        "airtableTokenApi": {
+          "name": "airtableTokenApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "<AIRTABLE_COMPANIES_BASE>",
+          "mode": "list",
+          "cachedResultName": "Companies",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_COMPANIES_BASE>"
+        },
+        "table": {
+          "__rl": true,
+          "value": "<AIRTABLE_COMPANIES_TABLE>",
+          "mode": "list",
+          "cachedResultName": "Assignments",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_COMPANIES_BASE>/<AIRTABLE_COMPANIES_TABLE>"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "Status": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "name": "Sync Airtable Status",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        1968,
+        392
+      ],
+      "executeOnce": true,
+      "retryOnFail": true,
+      "onError": "continueRegularOutput",
+      "id": "d4618b34-0362-5d9f-a471-2b4fc6e3b7f4",
+      "credentials": {
+        "airtableTokenApi": {
+          "name": "airtableTokenApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/<CONTROL_SHEET_ID>/values/Companies!F2:G61?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: $input.all().map(i => [i.json.company, '']).concat(Array.from({ length: 60 }, () => ['', ''])).slice(0, 60) }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "Write Run Queue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -944,
+        248
+      ],
+      "executeOnce": true,
+      "onError": "continueRegularOutput",
+      "id": "04ad96e8-fc25-51fa-bc95-6848bede653b",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "googleSheetsOAuth2Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "not-warning",
+              "leftValue": "={{ $json.warning === true }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Any Selected?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -944,
+        440
+      ],
+      "id": "ba26711a-d785-5720-9498-f1b4276b2eb4"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "ol1",
+              "leftValue": "={{ $json.one_link_pending }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "One Link Selected?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -944,
+        632
+      ],
+      "id": "a5f1e9a6-3eb2-5d05-a994-baf3ed6b52f0"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://<N8N_HOST>/webhook/one-link-companies",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ source: \"link-collector\", collector_execution: $execution.id, count: $json.one_link_pending, companies: $json.one_link_names }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "Hand Off to One Link",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -720,
+        632
+      ],
+      "executeOnce": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput",
+      "id": "058b48ab-3d2d-53f8-94dc-6c6667e56348"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 0 8,9,10,11 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1616,
+        536
+      ],
+      "name": "Schedule Trigger",
+      "id": "d2dd0e12-a140-5c7e-b83b-019fd64d7b2e"
+    },
+    {
+      "parameters": {
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/<CONTROL_SHEET_ID>/values/'HQ%20Addresses'!A%3AB",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "Read HQ Addresses",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1612,
+        600
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "id": "d35fe603-889e-54fc-96c7-2748b7960c38",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "googleSheetsOAuth2Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// v51 (2026-08-13) — tell Slack how many links the day collected.\n// Runs on the loop's DONE branch, i.e. once per batch, after the last company.\nconst RELAY = \"https://<N8N_HOST>/webhook/joblinkos-notify-7d41c9\";\nconst TZ = 'Asia/Manila';\nconst REPORT_INGEST = \"https://<N8N_HOST>/webhook/joblinkos-linkreport-ingest-3b7e21\";  // v63\n\n// ⚠️ Everything is guarded. A notification must never be able to fail a run that\n// has already collected the day's links.\nlet out = { notified: false, reason: 'not attempted' };\ntry {\n  // 1 — which run is this? Prep Companies stamps every item (v40).\n  let runMode = 'unknown';\n  try { runMode = String(($('Prep Companies').first().json || {}).run_mode || 'unknown'); } catch (e) {}\n  const mBatch = runMode.match(/^schedule-batch-(\\d+)$/);\n  const batch = mBatch ? Number(mBatch[1]) : 0;\n\n  // 2 — count THIS batch. Format Sheet Rows runs once per company; an item with\n  //     links_found true is one job link that reached the sheet. (Update Progress\n  //     counts the same thing per company, so these agree with column G.)\n  let links = 0, companies = 0, boards = 0;\n  // v63 — same walk, also keyed by company so the day can be reported per board.\n  const perCo = {}, zeroWhy = {};\n  for (let r = 0; ; r++) {\n    let items;\n    try { items = $('Format Sheet Rows').all(0, r); } catch (e) { break; }\n    if (!items) break;\n    const kept = items.filter(i => i && i.json && i.json.links_found).length;\n    links += kept;\n    companies += 1;\n    if (kept > 0) boards += 1;\n    // ⚠️ A kept row names the company in \"Company\"; the links_found:false marker\n    //    names it in lowercase \"company\". Both shapes have to be read.\n    let name = null;\n    for (const i of items) { const j = (i && i.json) || {}; if (j.Company) { name = j.Company; break; } }\n    if (!name && items[0] && items[0].json) name = items[0].json.company || null;\n    if (name) {\n      perCo[name] = (perCo[name] || 0) + kept;\n      const j0 = (items[0] && items[0].json) || {};\n      if (kept === 0 && j0.links_found === false) {\n        zeroWhy[name] = j0.fetch_ok ? 'board returned 0 jobs'\n                                    : ('fetch failed: ' + (j0.fetch_error || '?'));\n      } else { delete zeroWhy[name]; }\n    }\n  }\n\n\n  // ⚠️ v84 — a company that produced links MUST have been stamped.\n  // `Stamp Status (Fetched At)` runs downstream of `Append Links to NEW LINKS`, so a company\n  // with links and no stamp is a company whose links never reached the sheet. Found the hard\n  // way in production: one company produced 34 links, the append returned an EMPTY\n  // result with no error at all, the stamp never ran, and the execution reported success.\n  // v59 covers the append THROWING; nothing covered it succeeding-but-empty.\n  const stampedNames = new Set();\n  try {\n    for (let r = 0; ; r++) {\n      let items;\n      try { items = $('Stamp Status (Fetched At)').all(0, r); } catch (eS) { break; }\n      if (!items || !items.length) break;\n      for (const it of items) {\n        const nm = String(((it && it.json) || {}).Company || '').trim();\n        if (nm) stampedNames.add(nm);\n      }\n    }\n  } catch (eStamp) { /* never cost a run */ }\n  const lostAppends = [];\n  // ⚠️ only claim a loss when the stamp node actually produced names. If it ran but echoed no\n  //    Company (a schema change, say), every company would look lost — a false alarm on all 300\n  //    is worse than the silence this replaces.\n  if (stampedNames.size) {\n    for (const nm in perCo) {\n      if (perCo[nm] > 0 && !stampedNames.has(nm)) lostAppends.push(nm + ' (' + perCo[nm] + ' links)');\n    }\n  }\n\n  // v71 — the Companies tab travels with the report, so the Link Report can compare each\n  //       board's count against the status operator wrote (\"two jobs\" ⇒ 2, \"ok\" ⇒ 3 or more)\n  //       instead of posting a 300-line list.\n  // ⚠️ It also names every row SKIPPED for a status no rule recognises. The v47 allowlist\n  //    fails safe by skipping, so a relabel is otherwise completely invisible — which is\n  //    exactly how 21 companies fell off the schedule on 2026-08-31.\n  const statusBy = {}; const unknownStatus = [];\n  try {\n    // v81 (2026-09-03) — SYNCED VERBATIM from Prep Companies. These are a SECOND COPY of the\n    // schedule rules; when they drift, the report invents \"skipped\" boards that did collect\n    // (2026-09-02: 59 of them). Change them in Prep Companies and re-run fix_v81.\n    const V71_NEVER = /^(?:site not allowed|states not allowed|site's job has no|website not allowed|website job (?:has no|states not allowed))/i;\n    const V71_OFFL  = /\\b(?:one[\\s_-]*link|per[\\s_-]*job)\\b/i;\n    const V71_ALLOW = /^(?:ok|scrape nationally|site has no job|site has one job|one job|one only|two jobs|site error|less than \\d+ jobs?|website has no job|website error)\\b/i;\n    for (const it of $('Fetch Companies (operator)').all()) {\n      const j = (it && it.json) || {};\n      const nm = String(j.Company || '').trim();\n      if (!nm) continue;\n      const st = String(j.Status || '').trim();\n      statusBy[nm] = st;\n      const lk = String(j['Job Link'] || '').trim();\n      if (!/^https?:\\/\\//i.test(lk)) continue;\n      if (V71_NEVER.test(st) || V71_OFFL.test(st) || V71_ALLOW.test(st)) continue;\n      unknownStatus.push(nm + ' [' + (st || 'blank') + ']');\n    }\n  } catch (e) {}\n\n  // 3 — add to the day's tally. The four batches are four executions, so this has\n  //     to survive between them; static data does, and resets on a new day.\n  // ⚠️ v81 — SCHEDULED batches only. Every execution used to add to the day tally, so a\n  //    manual sheet-button run inflated that board and the NEXT day then read as a 50%\n  //    crash (two boards read as 104->52 and 90->45 — both had really collected\n  //    52 and 45 on BOTH days). A manual run still collects and still writes the sheet;\n  //    it just no longer moves the day's report numbers.\n  if (!batch) { out.reason = 'not a scheduled batch (' + runMode + ') - day tally untouched'; return [{ json: out }]; }\n  const s = $getWorkflowStaticData('global');\n  const today = new Date().toLocaleDateString('en-CA', { timeZone: TZ });   // YYYY-MM-DD\n  if (s.notifyDay !== today) {\n    s.notifyDay = today;\n    s.notifyLinks = 0; s.notifyCompanies = 0; s.notifyBoards = 0; s.notifyBatches = [];\n    s.notifyPerCompany = {}; s.notifyZeroWhy = {};                       // v63\n  }\n  if (!s.notifyPerCompany) s.notifyPerCompany = {};                      // v63\n  if (!s.notifyZeroWhy) s.notifyZeroWhy = {};                            // v63\n  // v71 — the whole tab is present in every batch, so the last write wins and is current.\n  s.notifyStatusBy = statusBy;\n  s.notifyUnknownStatus = unknownStatus;\n  for (const k in perCo) s.notifyPerCompany[k] = (Number(s.notifyPerCompany[k]) || 0) + perCo[k];\n  for (const k in zeroWhy) s.notifyZeroWhy[k] = zeroWhy[k];\n  if (!s.notifyLostAppends) s.notifyLostAppends = [];                  // v84\n  for (const l of lostAppends) if (s.notifyLostAppends.indexOf(l) === -1) s.notifyLostAppends.push(l);\n  s.notifyLinks = Number(s.notifyLinks || 0) + links;\n  s.notifyCompanies = Number(s.notifyCompanies || 0) + companies;\n  s.notifyBoards = Number(s.notifyBoards || 0) + boards;\n  if (batch && (s.notifyBatches || []).indexOf(batch) === -1) s.notifyBatches.push(batch);\n\n  out = {\n    run_mode: runMode, batch: batch,\n    batch_links: links, batch_companies: companies,\n    day_links: s.notifyLinks, day_companies: s.notifyCompanies,\n    day_boards: s.notifyBoards, day_batches: (s.notifyBatches || []).slice(),\n    lost_appends: (s.notifyLostAppends || []).slice(),                   // v84\n    notified: false, reason: ''\n  };\n\n  // 4 — only the last scheduled batch announces the day. Batches 1-3 and every\n  //     manual run stop here, having spent nothing.\n  if (batch !== 4) { out.reason = 'not batch 4 (' + runMode + ')'; return [{ json: out }]; }\n\n  await this.helpers.httpRequest({\n    method: 'POST', url: RELAY, json: true, timeout: 20000,\n    body: {\n      kind: 'links_collected',\n      links: s.notifyLinks,\n      companies: s.notifyCompanies,\n      boards_with_links: s.notifyBoards,\n      batches: (s.notifyBatches || []).length,\n      day: today\n    }\n  });\n  out.notified = true; out.reason = 'sent';\n\n  // v63 — hand the per-company breakdown to the Link Report workflow, which keeps\n  // it so \"Link Report\" in Slack can answer instantly. ⚠️ Its own try/catch: the\n  // day's Slack announcement above has already gone out and must not be undone\n  // by a failure here.\n  try {\n    await this.helpers.httpRequest({\n      method: 'POST', url: REPORT_INGEST, json: true, timeout: 20000,\n      body: {\n        day: today,\n        links: s.notifyLinks, companies: s.notifyCompanies,\n        boards_with_links: s.notifyBoards, batches: (s.notifyBatches || []).length,\n        per_company: s.notifyPerCompany, zero_why: s.notifyZeroWhy,\n        status_by: s.notifyStatusBy || {},                                  // v71\n        unknown_status: s.notifyUnknownStatus || [],                        // v71\n        lost_appends: s.notifyLostAppends || []                             // v84\n      }\n    });\n    out.report_sent = true;\n  } catch (e) {\n    out.report_sent = false;\n    out.report_error = e && e.message ? e.message : String(e);\n  }\n} catch (e) {\n  out.notified = false;\n  out.reason = 'notify failed: ' + (e && e.message ? e.message : String(e));\n}\nreturn [{ json: out }];"
+      },
+      "name": "Notify: Links Collected",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        220
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "Loop DONE branch. Counts the batch, tallies the day in static data, and on a scheduled batch 4 POSTs to the notify relay. Batches 1-3 and manual runs send nothing.",
+      "id": "cb72f07b-5c1e-570c-9c13-88ef8de1449f"
+    }
+  ],
+  "connections": {
+    "Webhook (Sheet Button)": {
+      "main": [
+        [
+          {
+            "node": "Read HQ Addresses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Companies (operator)": {
+      "main": [
+        [
+          {
+            "node": "Prep Companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Companies": {
+      "main": [
+        [
+          {
+            "node": "Any Selected?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Write Run Queue",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "One Link Selected?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop (rate limit)": {
+      "main": [
+        [
+          {
+            "node": "Notify: Links Collected",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Taleo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Taleo?": {
+      "main": [
+        [
+          {
+            "node": "Taleo Collect Links",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is API ATS?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Taleo Collect Links": {
+      "main": [
+        [
+          {
+            "node": "Format Sheet Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decodo Fetch": {
+      "main": [
+        [
+          {
+            "node": "Extract Job Links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Job Links": {
+      "main": [
+        [
+          {
+            "node": "Format Sheet Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Sheet Rows": {
+      "main": [
+        [
+          {
+            "node": "Links Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Links Found?": {
+      "main": [
+        [
+          {
+            "node": "Append Links to NEW LINKS",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stamp Status (Fetched At)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Links to NEW LINKS": {
+      "main": [
+        [
+          {
+            "node": "Stamp Status (Fetched At)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop (rate limit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stamp Status (Fetched At)": {
+      "main": [
+        [
+          {
+            "node": "Find Airtable Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Progress": {
+      "main": [
+        [
+          {
+            "node": "Loop (rate limit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is API ATS?": {
+      "main": [
+        [
+          {
+            "node": "API Collect Links",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Probe Careers API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API Collect Links": {
+      "main": [
+        [
+          {
+            "node": "Format Sheet Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Probe Careers API": {
+      "main": [
+        [
+          {
+            "node": "Careers API OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Careers API OK?": {
+      "main": [
+        [
+          {
+            "node": "Format Sheet Rows",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Decodo Fetch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Airtable Record": {
+      "main": [
+        [
+          {
+            "node": "Sync Airtable Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sync Airtable Status": {
+      "main": [
+        [
+          {
+            "node": "Update Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Selected?": {
+      "main": [
+        [
+          {
+            "node": "Loop (rate limit)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "One Link Selected?": {
+      "main": [
+        [
+          {
+            "node": "Hand Off to One Link",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read HQ Addresses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read HQ Addresses": {
+      "main": [
+        [
+          {
+            "node": "Fetch Companies (operator)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "availableInMCP": true,
+    "timezone": "Asia/Manila"
+  }
+}

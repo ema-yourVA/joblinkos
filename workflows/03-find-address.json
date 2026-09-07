@@ -1,0 +1,448 @@
+{
+  "name": "Job Link OS - Find Address",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        768,
+        -1040
+      ],
+      "id": "0591efd6-ef59-5f6d-a3d6-84ecfdd87f6c"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "<AIRTABLE_JOBS_BASE>",
+          "mode": "list",
+          "cachedResultName": "Data Entry",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_JOBS_BASE>"
+        },
+        "table": {
+          "__rl": true,
+          "value": "<AIRTABLE_JOBS_TABLE>",
+          "mode": "list",
+          "cachedResultName": "Entries",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_JOBS_BASE>/<AIRTABLE_JOBS_TABLE>"
+        },
+        "filterByFormula": "{Status} = 'Find Address'",
+        "options": {}
+      },
+      "name": "Fetch Find Address Records",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        992,
+        -1040
+      ],
+      "id": "ea69873b-5152-5c0d-ae26-4637807c6908",
+      "credentials": {
+        "airtableTokenApi": {
+          "name": "airtableTokenApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Loop Records",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1216,
+        -1040
+      ],
+      "id": "7a3e273c-fda4-528d-ac8e-72fdbadf515a"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Record v12\n// KEY FIXES:\n//   1. Zip: use LAST 5-digit number (zip at end, street number at start)\n//   2. City loop: only skip 2-letter state codes — NOT full state names.\n//      So 'New York, New York, United States' → city='New York' ✓\n//      And 'Garden Grove, California' → city='Garden Grove' ✓\n//   3. City embedded in street token (e.g. '7 South Orchard Road Aurora')\n\nconst STATES = {\n  AL:'Alabama',AK:'Alaska',AZ:'Arizona',AR:'Arkansas',CA:'California',CO:'Colorado',\n  CT:'Connecticut',DE:'Delaware',FL:'Florida',GA:'Georgia',HI:'Hawaii',ID:'Idaho',\n  IL:'Illinois',IN:'Indiana',IA:'Iowa',KS:'Kansas',KY:'Kentucky',LA:'Louisiana',\n  ME:'Maine',MD:'Maryland',MA:'Massachusetts',MI:'Michigan',MN:'Minnesota',\n  MS:'Mississippi',MO:'Missouri',MT:'Montana',NE:'Nebraska',NV:'Nevada',\n  NH:'New Hampshire',NJ:'New Jersey',NM:'New Mexico',NY:'New York',\n  NC:'North Carolina',ND:'North Dakota',OH:'Ohio',OK:'Oklahoma',OR:'Oregon',\n  PA:'Pennsylvania',RI:'Rhode Island',SC:'South Carolina',SD:'South Dakota',\n  TN:'Tennessee',TX:'Texas',UT:'Utah',VT:'Vermont',VA:'Virginia',\n  WA:'Washington',WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming',DC:'District of Columbia'\n};\nconst STATES_REV = Object.fromEntries(Object.entries(STATES).map(([abbr, name]) => [name.toLowerCase(), abbr]));\n\nconst STREET_HINT = /^(?:\\d+|US-|NJ-|NY-|CA-|TX-|I-\\d|Route\\b)|\\b(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Highway|Hwy|Drive|Dr|Lane|Ln|Court|Ct|Parkway|Pkwy|Plaza|Way|Circle|Cir|Place|Square|Sq|Suite|Ste|Floor|Fl|Building|Bldg|Turnpike|Tpke|Terrace|Ter|Expressway|Expy|Freeway|Fwy|Trail|Trl|Center|Ctr|Canal|Pike|Loop|Pass|Row|Alley|Point|Pointe|Ridge|Grove|Hill|Junction|Landing|Manor|Meadow|Orchard|Park|Ranch|River|Shore|Spring|Spur|Stream|Summit|Track|Union|View|Village|Vista|Walk)\\b/i;\nconst STREET_SUFFIX_SRC = '\\\\b(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Highway|Hwy|Drive|Dr|Lane|Ln|Court|Ct|Parkway|Pkwy|Way|Circle|Cir|Place|Square|Sq|Suite|Ste|Turnpike|Tpke|Terrace|Ter|Trail|Trl|Center|Ctr|Canal|Pike|Loop|Row|Point|Pointe|Ridge|Grove|Hill|Manor|Orchard|Park|Ranch|River|Shore|Spring|Spur|Stream|Summit|Track|Union|View|Village|Vista|Walk)\\\\b';\n\nfunction clean(v) {\n  return String(v ?? '').replace(/[\\u2018\\u2019]/g,\"'\").replace(/[\\u201C\\u201D]/g,'\"').replace(/\\s+/g,' ').trim();\n}\n\nfunction parseState(text) {\n  for (const m of text.matchAll(/\\b([A-Z]{2})\\b/g)) {\n    if (STATES[m[1]]) return m[1];\n  }\n  const lower = text.toLowerCase();\n  for (const [name, abbr] of Object.entries(STATES_REV)) {\n    if (lower.includes(name)) return abbr;\n  }\n  return null;\n}\n\nfunction extractCityFromStreet(streetToken) {\n  const re = new RegExp(STREET_SUFFIX_SRC, 'gi');\n  let last = null, m;\n  while ((m = re.exec(streetToken)) !== null) last = m;\n  if (!last) return null;\n  const after = streetToken.slice(last.index + last[0].length).trim();\n  if (after.length >= 3 && /^[A-Za-z][A-Za-z\\s]{1,}$/.test(after) && !STATES[after.toUpperCase()]) return after;\n  return null;\n}\n\nfunction isJunkCity(part) {\n  if (!part) return true;\n  if (/^\\d+$/.test(part)) return true;            // pure number\n  if (STATES[part.toUpperCase()]) return true;     // 2-letter state code ONLY\n  // Do NOT reject full state names here — they can also be city names (New York, California)\n  return false;\n}\n\nfunction parseLocation(text) {\n  const s = clean(text);\n  const out = { street: null, city: null, state: parseState(s), zip: null };\n  if (!s) return out;\n\n  const zipMatches = [...s.matchAll(/\\b(\\d{5})(?:-\\d{4})?\\b/g)];\n  if (zipMatches.length > 0) out.zip = zipMatches[zipMatches.length - 1][1];\n\n  const parts = s.split(',').map(clean).filter(Boolean);\n  const si = parts.findIndex(p => STREET_HINT.test(p));\n\n  if (si >= 0) {\n    out.street = parts[si];\n    let found = false;\n    for (let i = si + 1; i < parts.length; i++) {\n      const maybeCity = parts[i]\n        .replace(/\\b\\d{5}(?:-\\d{4})?\\b/g, '')\n        .replace(/\\bUS(A)?\\b/gi, '')\n        .replace(/\\bUnited States\\b/gi, '')\n        .trim();\n      if (maybeCity && !isJunkCity(maybeCity)) { out.city = maybeCity; found = true; break; }\n    }\n    if (!found) {\n      const emb = extractCityFromStreet(parts[si]);\n      if (emb) out.city = emb;\n    }\n  } else {\n    for (const p of parts) {\n      const maybeCity = p\n        .replace(/\\b\\d{5}(?:-\\d{4})?\\b/g, '')\n        .replace(/\\bUS(A)?\\b/gi, '')\n        .replace(/\\bUnited States\\b/gi, '')\n        .trim();\n      if (maybeCity && !isJunkCity(maybeCity)) { out.city = maybeCity; break; }\n    }\n  }\n  return out;\n}\n\nfunction mergeParsed(a, b) {\n  return {\n    street: a.street || b.street || null,\n    city:   a.city   || b.city   || null,\n    state:  a.state  || b.state  || null,\n    zip:    a.zip    || b.zip    || null\n  };\n}\n\nfunction extractCompanyAndLocation(companyField, addressField) {\n  let company = clean(companyField);\n  let address = clean(addressField);\n  let locationSeed = address;\n\n  const mixed = company.match(/^(.+?),\\s*([A-Z]{2})(?:\\s+\\d{5})?\\s+-\\s+(.+)$/);\n  if (mixed && STATES[mixed[2]]) {\n    company = clean(mixed[3]);\n    locationSeed = clean([mixed[1], mixed[2], address].filter(Boolean).join(', '));\n    return { company, locationSeed };\n  }\n\n  for (const src of [company, address]) {\n    const di = src.indexOf(' - ');\n    if (di > 0) {\n      const left = clean(src.slice(0, di));\n      if (left && !STREET_HINT.test(left) && !/^.+,\\s*[A-Z]{2}/.test(left)) {\n        company = left;\n        locationSeed = clean(src.slice(di + 3));\n        return { company, locationSeed };\n      }\n    }\n  }\n  return { company, locationSeed };\n}\n\nreturn $input.all().map(item => {\n  const f = item.json.fields || item.json;\n  const recordId = item.json.id || f.id;\n  const rawCompany = clean(f.Company || f.company || '');\n  const rawAddress = clean(f.Address || f.address || '');\n  const extracted = extractCompanyAndLocation(rawCompany, rawAddress);\n  const p1 = parseLocation(rawAddress);\n  const p2 = parseLocation(extracted.locationSeed);\n  const p  = mergeParsed(p1, p2);\n  return { json: {\n    record_id: recordId,\n    raw_address: rawAddress,\n    p_company: extracted.company,\n    p_street:  p.street,\n    p_zip:     p.zip,\n    p_city:    p.city,\n    p_state:   p.state\n  }};\n});"
+      },
+      "name": "Parse Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1424,
+        -1040
+      ],
+      "id": "33de50a6-ef01-5847-811d-7a4734b18136"
+    },
+    {
+      "parameters": {
+        "url": "https://<SUPABASE_PROJECT>.supabase.co/rest/v1/addresses",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "full_text,company,street,city,state,zip"
+            },
+            {
+              "name": "full_text",
+              "value": "={{ 'ilike.*' + String($json.p_company || '').replace(/[*%]/g, '') + '*' }}"
+            },
+            {
+              "name": "limit",
+              "value": "200"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "name": "Search Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1648,
+        -1040
+      ],
+      "id": "651e612d-e8da-5649-a830-9b9b5a340803",
+      "credentials": {
+        "supabaseApi": {
+          "name": "supabaseApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Score & Decide v12\n// Runs ONCE for all input items (runOnceForAllItems mode).\n// Input: 0-N flat candidate rows from Search Supabase\n// Also reads Parse Record output to get the parsed address fields.\n// Always returns exactly 1 output item — handles 0 candidates gracefully.\n//\n// Scoring priority (company must match first):\n//   1. street + zip  → exact address (street takes priority when available)\n//   2. street + city\n//   3. zip only      → fallback when no street given or no street match\n//   4. state + city\n//   5. city only\n//\n// cityOk uses EXACT match only (no full_text contains) to prevent false positives\n// e.g. city 'Norfolk' must not match a record whose city is 'Suffolk'\n\nfunction norm(v) {\n  return String(v ?? '').replace(/[\\u2018\\u2019]/g,\"'\").toLowerCase().replace(/[^a-z0-9]+/g,'');\n}\nfunction same(a, b) {\n  const na = norm(a), nb = norm(b);\n  return Boolean(na && nb && na === nb);\n}\nfunction contains(haystack, needle) {\n  const nh = norm(haystack), nn = norm(needle);\n  return Boolean(nh && nn && nh.includes(nn));\n}\n\nfunction candidateScore(row, p) {\n  // Company must match (fuzzy — names can vary slightly)\n  const companyOk = same(row.company, p.p_company) || contains(row.full_text, p.p_company);\n  if (!companyOk) return null;\n\n  const zipOk    = p.p_zip    && String(row.zip   || '') === String(p.p_zip);\n  const stateOk  = p.p_state  && String(row.state || '').toUpperCase() === String(p.p_state || '').toUpperCase();\n  // EXACT city match only — prevents e.g. 'Suffolk' matching when city='Norfolk'\n  const cityOk   = p.p_city   && same(row.city, p.p_city);\n  // Street: fuzzy via full_text contains (handles embedded city in p_street like '7 South Orchard Road Aurora')\n  const streetOk = p.p_street && (same(row.street, p.p_street) || contains(row.full_text, p.p_street));\n\n  if (streetOk && zipOk)  return { priority: 1, reason: 'company_street_zip' };\n  if (streetOk && cityOk) return { priority: 2, reason: 'company_street_city' };\n  if (zipOk)              return { priority: 3, reason: 'company_zip' };\n  if (stateOk && cityOk)  return { priority: 4, reason: 'company_state_city' };\n  if (cityOk)             return { priority: 5, reason: 'company_city' };\n  return null;\n}\n\n// Get parsed record from Parse Record node (1 item always present via SplitInBatches)\nconst parsed = $('Parse Record').first().json;\n\n// All input items are flat candidate rows from Search Supabase (0 to N)\nconst candidates = $input.all().map(item => item.json);\n\nlet best = null;\nfor (const row of candidates) {\n  const score = candidateScore(row, parsed);\n  if (score && (!best || score.priority < best.priority)) {\n    best = { ...row, priority: score.priority, reason: score.reason };\n  }\n}\n\nreturn [{ json: {\n  record_id:       parsed.record_id,\n  found_match:     Boolean(best),\n  matched_address: best ? best.full_text : null,\n  match_status:    'Qualified',\n  match_reason:    best ? best.reason : 'no_match',\n  candidate_count: candidates.length,\n  debug_company:   parsed.p_company,\n  debug_zip:       parsed.p_zip,\n  debug_city:      parsed.p_city,\n  debug_state:     parsed.p_state,\n  debug_street:    parsed.p_street\n}}];"
+      },
+      "name": "Score & Decide",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1872,
+        -1040
+      ],
+      "id": "2eaf2cfe-cbe8-52f9-9c97-63e30b3f974c"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.found_match }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "IF Found Match",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2096,
+        -1040
+      ],
+      "id": "7ea278ea-89ac-5949-bb0f-fdb242c7bb51"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "<AIRTABLE_JOBS_BASE>",
+          "mode": "list",
+          "cachedResultName": "Data Entry",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_JOBS_BASE>"
+        },
+        "table": {
+          "__rl": true,
+          "value": "<AIRTABLE_JOBS_TABLE>",
+          "mode": "list",
+          "cachedResultName": "Entries",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_JOBS_BASE>/<AIRTABLE_JOBS_TABLE>"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.record_id }}",
+            "Address": "={{ $json.matched_address }}",
+            "Status": "Qualified"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true
+            },
+            {
+              "id": "Address",
+              "displayName": "Address",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false
+            }
+          ]
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "name": "Update Airtable - Match Found",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        2304,
+        -1152
+      ],
+      "id": "589f06c2-1fb0-5c65-aa30-0a7b7eb7bfee",
+      "credentials": {
+        "airtableTokenApi": {
+          "name": "airtableTokenApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "<AIRTABLE_JOBS_BASE>",
+          "mode": "list",
+          "cachedResultName": "Data Entry",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_JOBS_BASE>"
+        },
+        "table": {
+          "__rl": true,
+          "value": "<AIRTABLE_JOBS_TABLE>",
+          "mode": "list",
+          "cachedResultName": "Entries",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_JOBS_BASE>/<AIRTABLE_JOBS_TABLE>"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.record_id }}",
+            "Status": "Qualified"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false
+            }
+          ]
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "name": "Update Airtable - No Match",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        2304,
+        -912
+      ],
+      "id": "8ad4d3b8-f0f9-5080-b3be-c6047fd9b8c1",
+      "credentials": {
+        "airtableTokenApi": {
+          "name": "airtableTokenApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { status: 'all_records_processed', completed_at: new Date().toISOString() } }];"
+      },
+      "name": "Loop Done",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1424,
+        -832
+      ],
+      "id": "1680f311-e972-5b6d-b716-3e528c07f769"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Find Address Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Find Address Records": {
+      "main": [
+        [
+          {
+            "node": "Loop Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Records": {
+      "main": [
+        [
+          {
+            "node": "Parse Record",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Record": {
+      "main": [
+        [
+          {
+            "node": "Search Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Supabase": {
+      "main": [
+        [
+          {
+            "node": "Score & Decide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score & Decide": {
+      "main": [
+        [
+          {
+            "node": "IF Found Match",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Found Match": {
+      "main": [
+        [
+          {
+            "node": "Update Airtable - Match Found",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Airtable - No Match",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Airtable - Match Found": {
+      "main": [
+        [
+          {
+            "node": "Loop Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Airtable - No Match": {
+      "main": [
+        [
+          {
+            "node": "Loop Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "availableInMCP": true
+  }
+}

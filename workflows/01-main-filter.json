@@ -1,0 +1,726 @@
+{
+  "name": "Job Link OS - Main Filter",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "e9067d58-861f-53f1-ae20-7e4fceff8487",
+        "options": {}
+      },
+      "name": "Webhook1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1408,
+        528
+      ],
+      "id": "2d1b4500-68cf-5b8c-abe4-faacf45fe020",
+      "webhookId": "245eee59-3169-5488-9e96-51514e674136"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "<CONTROL_SHEET_ID>",
+          "mode": "list",
+          "cachedResultName": "NEW LINKS"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "LIST"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Status",
+              "lookupValue": "="
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Look for unfiltered links1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -1184,
+        528
+      ],
+      "id": "73bc5d8e-f3b4-5137-8c1b-2bf52ed3506a",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "googleSheetsOAuth2Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Build per-URL Airtable filter formula.\n// All matches require expired != \"Yes\" (mirrors Job Board Masterlist Duplicate Checker view).\n// - example-jobboard.com: match by job ID (slug varies due to case / encoding / widget URLs)\n// - everything else: match on URL with query string stripped on both sides (handles utm/cid/gh_src/fbclid/lang/etc tracking params)\nconst item = $input.item.json;\nconst rawLink = (item.Link == null ? '' : String(item.Link)).trim();\nconst linkKey = rawLink.replace(/\\/+$/, '');\nconst rowNumber = item.row_number;\nlet uuid = item.uuid || item.UUID || item.Uuid || '';\nuuid = String(uuid).trim();\nif (!uuid) { uuid = 'missing-uuid-row-' + rowNumber; }\nconst isValid = rawLink.length > 0 && /^https?:\\/\\//i.test(rawLink);\nconst company = (item.Company || item.company || '').trim();\n\nlet _filterFormula;\nconst ca = linkKey.match(/culinaryagents\\.com\\/jobs\\/(\\d+)/i);\nif (ca) {\n  const jobId = ca[1];\n  _filterFormula = 'AND({expired} != \"Yes\", SEARCH(\"example-jobboard.com\", LOWER({appLink})) >= 1, SEARCH(\"/jobs/' + jobId + '-\", LOWER({appLink})) >= 1)';\n} else {\n  // Mirror Job Board Masterlist Duplicate Checker: case-insensitive substring search.\n  // A record matches if the input URL appears as a substring of the stored appLink.\n  // This handles widget/canonical URL pairs (input ⊆ stored) without creating\n  // false positives on URLs whose job ID is in the query string (mccarthy, etc).\n  const escaped = linkKey.replace(/\\\\/g, '\\\\\\\\').replace(/\"/g, '\\\\\"');\n  _filterFormula = 'AND({expired} != \"Yes\", SEARCH(LOWER(\"' + escaped + '\"), LOWER({appLink})) >= 1)';\n}\n\nreturn { json: { row_number: rowNumber, uuid, Link: rawLink, Company: company, _linkKey: linkKey, _isValid: isValid, _filterFormula } };"
+      },
+      "name": "Prepare Link1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        528
+      ],
+      "id": "35baeb85-cb3d-520d-8223-a5165b1bb9de"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Dedupe In Batch — spreads all row fields so Company is preserved\nconst seen = new Map();\nconst results = [];\nfor (const entry of $input.all()) {\n  const row = entry.json;\n  const key = (row._linkKey || '').toLowerCase();\n  if (!row._isValid) {\n    results.push({ json: { ...row, _batchDuplicate: false, _invalidLink: true } });\n    continue;\n  }\n  if (seen.has(key)) {\n    results.push({ json: { ...row, _batchDuplicate: true, _firstRow: seen.get(key) } });\n  } else {\n    seen.set(key, row.row_number);\n    results.push({ json: { ...row, _batchDuplicate: false } });\n  }\n}\nreturn results;"
+      },
+      "name": "Dedupe In Batch1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -736,
+        528
+      ],
+      "id": "a77538be-cacc-5d1c-88c4-a1937436dec5"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Loop Over Items1",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -512,
+        512
+      ],
+      "id": "38cc99bc-c07f-56cc-8922-9faf2eb33726"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "mode": "list",
+          "value": "<AIRTABLE_MASTERLIST_BASE>",
+          "cachedResultName": "Job Board Masterlist"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "<AIRTABLE_MASTERLIST_TABLE>",
+          "cachedResultName": "Job Postings"
+        },
+        "filterByFormula": "={{ $json._filterFormula }}",
+        "returnAll": false,
+        "limit": 1,
+        "options": {
+          "fields": [
+            "appLink"
+          ]
+        }
+      },
+      "name": "Check Company Masterlist1",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        -288,
+        496
+      ],
+      "retryOnFail": true,
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput",
+      "id": "51334136-20ff-5987-aff9-f95bb42c8f6f",
+      "credentials": {
+        "airtableTokenApi": {
+          "name": "airtableTokenApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cond-airtable-hit",
+              "leftValue": "={{ $json.id }}",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              },
+              "rightValue": ""
+            },
+            {
+              "id": "cond-batch-dup",
+              "leftValue": "={{ $('Loop Over Items1').item.json._batchDuplicate }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "or"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Is Duplicate?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -16,
+        496
+      ],
+      "id": "919920e1-e5d5-5751-a3b9-f9431e7edf0d"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "<CONTROL_SHEET_ID>",
+          "cachedResultName": "NEW LINKS"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultName": "LIST"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "uuid": "={{ $('Loop Over Items1').item.json.uuid }}",
+            "Status": "Duplicate"
+          },
+          "matchingColumns": [
+            "uuid"
+          ],
+          "schema": [
+            {
+              "id": "uuid",
+              "displayName": "uuid",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Update status to Duplicate1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        160,
+        592
+      ],
+      "retryOnFail": true,
+      "onError": "continueErrorOutput",
+      "id": "a286a6e6-9733-570d-8bf1-ff3343347312",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "googleSheetsOAuth2Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "<CONTROL_SHEET_ID>",
+          "cachedResultName": "NEW LINKS"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultName": "LIST"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "uuid": "={{ $('Loop Over Items1').item.json.uuid }}",
+            "Status": "Transferred"
+          },
+          "matchingColumns": [
+            "uuid"
+          ],
+          "schema": [
+            {
+              "id": "uuid",
+              "displayName": "uuid",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "name": "Update status to Transferred1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        720,
+        912
+      ],
+      "retryOnFail": true,
+      "onError": "continueErrorOutput",
+      "id": "6f409551-a125-5980-b55f-7db8587c1d27",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "googleSheetsOAuth2Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "<AIRTABLE_JOBS_BASE>",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "<AIRTABLE_JOBS_TABLE>",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Job Link": "={{ $('Loop Over Items1').item.json.Link }}",
+            "Company": "={{ $('Loop Over Items1').item.json.Company }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Job Link",
+              "displayName": "Job Link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false,
+              "removed": false
+            },
+            {
+              "id": "Company",
+              "displayName": "Company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false,
+              "removed": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Push to My Airtable1",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        448,
+        832
+      ],
+      "retryOnFail": true,
+      "onError": "continueErrorOutput",
+      "id": "7d09998f-7161-52f4-92f0-234856195824",
+      "credentials": {
+        "airtableTokenApi": {
+          "name": "airtableTokenApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "<CONTROL_SHEET_ID>",
+          "cachedResultName": "NEW LINKS"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultName": "LIST"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "uuid": "={{ $('Loop Over Items1').item.json.uuid }}",
+            "Status": "Error - Manual Check"
+          },
+          "matchingColumns": [
+            "uuid"
+          ],
+          "schema": [
+            {
+              "id": "uuid",
+              "displayName": "uuid",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Mark Row as Error1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -960,
+        880
+      ],
+      "retryOnFail": true,
+      "onError": "continueRegularOutput",
+      "id": "4e4ee0fc-5c10-5ee7-9397-d3bd208c0a36",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "googleSheetsOAuth2Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "C0ATXUNFR6H",
+          "cachedResultName": "automation-alerts"
+        },
+        "text": "=:warning: *Job Link Filter — row flagged for manual check*\n\n*UUID:* {{ $('Loop Over Items1').item.json.uuid }}\n*Row:* {{ $('Loop Over Items1').item.json.row_number }}\n*Link:* {{ $('Loop Over Items1').item.json.Link }}\n*Company:* {{ $('Loop Over Items1').item.json.Company || 'N/A' }}\n*Error:* {{ $json.error?.message ?? 'See Mark Row as Error output' }}\n*Workflow:* {{ $workflow.name }}\n*Execution:* {{ $execution.id }}\n\n_Sheet status set to \"Error - Manual Check\". Open the execution to see details._",
+        "otherOptions": {
+          "includeLinkToWorkflow": true,
+          "mrkdwn": true
+        }
+      },
+      "name": "Notify Slack of Failure1",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        -736,
+        720
+      ],
+      "retryOnFail": true,
+      "onError": "continueRegularOutput",
+      "id": "487b05bc-4072-5e86-897b-1cdec0bb7efc",
+      "webhookId": "ba7563e5-2286-574a-9db6-bf1b0eefa072",
+      "credentials": {
+        "slackApi": {
+          "name": "slackApi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "<CONTROL_SHEET_ID>",
+          "cachedResultName": "NEW LINKS"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultName": "LIST"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "uuid": "={{ $('Loop Over Items1').item.json.uuid }}",
+            "Status": "OK"
+          },
+          "matchingColumns": [
+            "uuid"
+          ],
+          "schema": [
+            {
+              "id": "uuid",
+              "displayName": "uuid",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Update status to OK1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        160,
+        816
+      ],
+      "retryOnFail": true,
+      "onError": "continueErrorOutput",
+      "id": "53ffd578-923c-559f-a41e-9b82e6911883",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "googleSheetsOAuth2Api account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Look for unfiltered links1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Look for unfiltered links1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Link1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Link1": {
+      "main": [
+        [
+          {
+            "node": "Dedupe In Batch1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dedupe In Batch1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items1": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Check Company Masterlist1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Company Masterlist1": {
+      "main": [
+        [
+          {
+            "node": "Is Duplicate?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Duplicate?1": {
+      "main": [
+        [
+          {
+            "node": "Update status to Duplicate1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update status to OK1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update status to Duplicate1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Row as Error1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update status to Transferred1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Row as Error1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Push to My Airtable1": {
+      "main": [
+        [
+          {
+            "node": "Update status to Transferred1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Row as Error1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Row as Error1": {
+      "main": [
+        [
+          {
+            "node": "Notify Slack of Failure1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Slack of Failure1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update status to OK1": {
+      "main": [
+        [
+          {
+            "node": "Push to My Airtable1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Row as Error1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "availableInMCP": true
+  }
+}
