@@ -1,171 +1,171 @@
 # JobLinkOS
 
-**An end-to-end pipeline that turns a raw job link into a qualified, address-verified database record.**
+**A system that takes a raw job link and turns it into a finished, address-checked record in a database, without anyone doing it by hand.**
 
-It collects job listings from 300+ company career sites, filters out duplicates, reads each posting with an LLM, completes missing addresses from a 95,000-row reference database, and files a clean record — with a Slack message whenever something is skipped or fails.
+It gathers job listings from more than 300 company career sites, throws out the ones already seen, reads each posting with AI, fills in any missing street address from a reference list of 95,000 addresses, and files a clean record. If anything is skipped or goes wrong, it says so in Slack.
 
-A client's team used to do every one of those steps by hand. Two months after launch, monthly output was **5.8× the manual average**.
+A client's team used to do every one of those steps manually. Two months after this went live, they were finishing **5.8 times as many job links per month**.
 
-This repository holds **sanitized exports of the n8n workflows** plus the case study. It is a portfolio artefact, not a product — see [What is and isn't here](#what-is-and-isnt-here).
+This repository holds cleaned-up copies of the automation workflows, plus the story of how it was built. It is a portfolio piece, not a product you can install. See [What is and is not here](#what-is-and-is-not-here).
 
 ---
 
 ## The problem
 
-The client's team ran four chores by hand, for every batch, every day:
+The client's team did four jobs by hand, for every batch, every day:
 
-1. **Link collecting** — open 300+ career sites one at a time, sometimes through a VPN, and copy-paste every job link into a spreadsheet.
-2. **Link checking** — search the database for each collected link. Most turned out to be repeats.
-3. **Data scraping** — open every surviving link and copy 10+ fields per job, one field at a time.
-4. **Address finding** — hunt down the exact street address in a masterlist, job by job. The most tedious step of the four.
+1. **Collecting links.** Open 300+ career sites one at a time, sometimes through a VPN, and copy and paste every job link into a spreadsheet.
+2. **Checking links.** Search the database for each link they had just collected. Most turned out to be ones they already had.
+3. **Copying the details.** Open every remaining link and copy 10+ pieces of information per job, one field at a time.
+4. **Finding the address.** Look up the exact street address in a master list, job by job. This was the worst of the four.
 
-It worked, and it did not scale. Output sat between 2,870 and 3,826 links a month, and every number depended on somebody being at a desk.
+It worked, and it could not grow. Output sat between 2,870 and 3,826 links a month, and every one of those numbers depended on somebody being at a desk.
 
 ## What I built
 
-One Google Sheet is the control panel. Everything below starts from its menu.
+One Google Sheet is the control panel. Everything below starts from a button in its menu.
 
-| Stage | What happens |
+| Step | What happens |
 |---|---|
-| **Link Collector** | One click walks all 300+ career sites and collects every job link, keeping only postings in the allowed states. Close to 40 site types, each fetched its own way. |
-| **Initial Filter** | The sheet colour-codes four kinds of duplicate, assigns each row a permanent tracking ID, and hands the clean batch on. |
-| **Main Filter** | Each link is normalised, de-duplicated within the batch, then checked against the full masterlist. Only genuinely new links join the queue. |
-| **Data Scraper** | Each page is fetched — cheapest method first — obviously low-paying posts are dropped before the LLM runs, the LLM reads the posting field by field, and the output is validated before anything is saved. |
-| **Find Address** | Records the scraper flagged as having an incomplete address are completed from the reference database by fuzzy match and scoring. |
-| **Sync Database** | Keeps the 95,000-row address reference in step with the master sheet. Re-runnable: existing rows are skipped, so it never creates duplicates. |
-| **Notify (relay)** | Every skip or failure posts to Slack with its reason. Qualified records save silently. |
+| **Link Collector** | One click visits all 300+ career sites and collects every job link, keeping only the postings in the states the client hires in. Nearly 40 different kinds of site, each one fetched the way that site needs. |
+| **Initial Filter** | The sheet colours in four different kinds of repeat, gives every row its own tracking number, and passes the clean batch along. |
+| **Main Filter** | Each link is tidied up, checked against the others in the same batch, then checked against the full master list. Only genuinely new links go forward. |
+| **Data Scraper** | Each page is fetched using the cheapest method that works. Jobs that obviously pay too little are dropped before the AI ever runs. The AI then reads the posting field by field, and the answer is checked before anything is saved. |
+| **Find Address** | Any record the scraper marked as having an incomplete address gets filled in from the reference list. |
+| **Sync Database** | Keeps that 95,000-row address list up to date with the master sheet. You can run it as often as you like: it skips rows that are already there, so it never creates duplicates. |
+| **Notify** | Every skip or failure posts a Slack message saying which record and why. Records that saved fine stay quiet. |
 
-Two design decisions carried most of the weight:
+Two decisions did most of the heavy lifting:
 
-**Escalate, don't over-provision.** Every fetch tries the free path first — a plain HTTP request — then a rendering service, then a paid scraping API, and only for the page that actually needs it. The same shape applies one level down, inside the paid API: its cheap proxy pool is tried before its expensive one, and a host that fails is *remembered* for seven days rather than forever. Auditing that tiering cut scraping costs by **42%** with no change to coverage.
+**Start cheap, and only pay more when you have to.** Every page fetch tries the free way first, a plain web request. If that does not work, it tries a rendering service. If that still does not work, it uses a paid scraping service, and only for the page that actually needed it. The same idea applies inside the paid service too: its cheaper option is tried before its expensive one, and if a site fails, the system *remembers* that for seven days rather than forever, so a site that fixes itself goes back to the cheap route. Going through this properly cut the scraping bill by **42%** without collecting any less.
 
-**Judge results by shape, never by emptiness.** The worst misses in this system were never blank pages — they were bot-challenge pages, full of HTML, that looked like successful fetches. Every fetch result is checked for what it *is* (valid JSON, valid XML, enough real text, no challenge markers) before it counts as a success.
+**Do not assume an empty answer is the only kind of bad answer.** The worst mistakes in this system were never blank pages. They were "prove you are not a robot" pages: full of content, and they looked like a page that had loaded fine. So every fetch result is checked for what it actually is (proper JSON, proper XML, enough real text, none of the tell-tale robot-check wording) before it counts as a success.
 
-## Before / after
+## Before and after
 
-| | Before · all by hand | After · JobLinkOS |
+| | Before, all by hand | After, with JobLinkOS |
 |---|---|---|
-| **Collecting links** | Open 300+ sites one by one, sometimes via VPN, copy-paste each link | One click, all sites, allowed-state jobs only |
-| **Removing duplicates** | Search the database for every link, manually | Two layers: colour-flagged in the sheet, then checked against the full masterlist |
-| **Reading a posting** | Open the link, copy 10+ fields one at a time | LLM extraction, roughly one record every 30 seconds |
-| **Completing an address** | Hunt the masterlist job by job | Fuzzy match and scoring against 95,000 rows, with fallback |
-| **Failures** | Noticed when someone spots them | Slack message naming the record and the reason |
-| **Effort per batch** | Hours | Two clicks |
+| **Collecting links** | Open 300+ sites one by one, sometimes on a VPN, copy and paste each link | One click, every site, only the states that count |
+| **Removing repeats** | Search the database for every link, manually | Two passes: colour-coded in the sheet, then checked against the full master list |
+| **Reading a posting** | Open the link, copy 10+ fields one at a time | AI reads it, roughly one record every 30 seconds |
+| **Completing an address** | Look through the master list job by job | Matched automatically against 95,000 addresses, with a backup plan if nothing fits |
+| **Things going wrong** | Noticed whenever somebody happened to spot it | A Slack message naming the record and the reason |
+| **Work per batch** | Hours | Two clicks |
 
-## How it fits together
+## How it all fits together
 
 ```mermaid
 flowchart TD
-    A["Control sheet<br/>(menu button or schedule)"] --> B["Link Collector<br/>300+ sites · ~40 site types"]
-    B --> C["Initial Filter<br/>duplicate colours · tracking IDs"]
-    C --> D["Main Filter<br/>URL cleanup · batch dedupe"]
-    D --> E{"Seen before?"}
-    E -- yes --> F["Mark row Duplicate"]
-    E -- no --> G["Processing queue"]
+    A["Control sheet<br/>(menu button or timer)"] --> B["Link Collector<br/>300+ sites, ~40 kinds of site"]
+    B --> C["Initial Filter<br/>colour in repeats, add tracking numbers"]
+    C --> D["Main Filter<br/>tidy the links, remove repeats in the batch"]
+    D --> E{"Seen this one before?"}
+    E -- yes --> F["Mark the row as a repeat"]
+    E -- no --> G["Waiting list"]
 
-    G --> H["Fetch job page"]
-    H --> H1["1 · plain HTTP request"]
-    H1 -- "JS shell / challenge" --> H2["2 · rendering service"]
-    H2 -- "still blocked" --> H3["3 · scraping API<br/>cheap pool, then premium"]
+    G --> H["Fetch the job page"]
+    H --> H1["1. plain web request (free)"]
+    H1 -- "page is empty or blocked" --> H2["2. rendering service"]
+    H2 -- "still blocked" --> H3["3. paid scraping service<br/>cheap option first"]
 
-    H1 --> I{"Obviously low pay?"}
+    H1 --> I{"Obviously pays too little?"}
     H2 --> I
     H3 --> I
-    I -- yes --> J["Save as Low Pay<br/>LLM never runs"]
-    I -- no --> K["LLM reads the posting"]
-    K --> L["Validate the output<br/>salary sanity · field checks"]
-    L --> M{"Address complete?"}
-    M -- no --> N["Find Address<br/>fuzzy match vs 95,000 rows"]
+    I -- yes --> J["Save as Low Pay,<br/>AI never runs, nothing spent"]
+    I -- no --> K["AI reads the posting"]
+    K --> L["Check the AI's answer<br/>does the salary make sense, are fields filled"]
+    L --> M{"Is the address complete?"}
+    M -- no --> N["Find Address<br/>match against 95,000 addresses"]
     M -- yes --> O["Save as Qualified"]
     N --> O
-    L -- "failed checks" --> P["Save as Error"]
+    L -- "answer failed the checks" --> P["Save as Error"]
 
-    J --> Q["Notify relay → Slack"]
+    J --> Q["Slack message"]
     P --> Q
 
-    R["Address master sheet"] --> S["Sync Database<br/>idempotent batch upsert"]
-    S --> T[("Address reference<br/>95,000 rows")]
+    R["Master address sheet"] --> S["Sync Database<br/>safe to re-run, skips what is there"]
+    S --> T[("Address reference list<br/>95,000 rows")]
     T --> N
 ```
 
-## Result
+## The result
 
-Completed job links per month. The automation went live at the start of May.
+Job links finished per month. The automation went live at the start of May.
 
-| Month | Links completed | |
+| Month | Links finished | |
 |---|---:|---|
-| January | 3,565 | manual |
-| February | 3,411 | manual |
-| March | 3,826 | manual |
-| April | 2,870 | manual |
+| January | 3,565 | by hand |
+| February | 3,411 | by hand |
+| March | 3,826 | by hand |
+| April | 2,870 | by hand |
 | **May** | **12,599** | automated |
 | **June** | **14,822** | automated |
 | **July** | **19,786** | automated |
 
-**5.8× the manual average.** June is the month I point to: the client was mostly away from the desk, and the pipeline kept collecting, checking and filling records on its own.
+**5.8 times the manual average.** June is the month I point to. The client was mostly away from their desk, and the system kept collecting, checking and filling in records on its own.
 
-Separately, an audit found the scraping service was quietly billing every request at its most expensive tier. Correcting that **cut scraping costs by 42%**, with no change to coverage or results.
+Separately, an audit found the scraping service had quietly been charging every single request at its most expensive rate. Fixing that **cut scraping costs by 42%**, with no drop in what was collected.
 
-## Stack
+## What it is built with
 
 | | |
 |---|---|
-| **Orchestration** | n8n (self-hosted) |
-| **Control surface** | Google Sheets + Google Apps Script |
-| **Databases** | Airtable (job records), Supabase / PostgreSQL (address reference) |
-| **LLM** | DeepSeek Chat v3 via OpenRouter |
-| **Fetching** | direct HTTP → Jina AI Reader → Decodo Web Scraping API |
-| **Alerting** | Slack, through a relay so no webhook URL ever reaches a client |
-| **Version control** | GitHub (workflow JSON exports) |
+| **Runs the workflows** | n8n, self-hosted |
+| **Control panel** | Google Sheets and Google Apps Script |
+| **Databases** | Airtable for the job records, Supabase (PostgreSQL) for the address list |
+| **AI** | DeepSeek Chat v3, through OpenRouter |
+| **Fetching pages** | plain web request first, then Jina AI Reader, then the Decodo scraping service |
+| **Alerts** | Slack, sent through a small relay so the Slack address never sits inside a client workflow |
+| **Version control** | GitHub, for the workflow files |
 
-### Where AI is used, and where it isn't
+### Where AI is used, and where it is not
 
-**In the pipeline:** an LLM reads job pages and fills in the fields. Every LLM output passes rule-based checks — salary sanity, field shape, address completeness — before anything is saved. The model is never the last word.
+**In the system:** AI reads the job pages and fills in the fields. Every answer it gives is then checked by ordinary rules, does the salary make sense, are the fields the right shape, is the address complete, before anything is saved. The AI never gets the final say.
 
-**In the build:** I used Claude as an assistant for drafting code and copy. The architecture, the decisions, the testing and the client relationship are mine, and I review everything the AI touches before it ships.
+**In building it:** I used Claude to help draft code and wording. The design, the decisions, the testing and the client relationship are mine, and I read everything the AI writes before it goes anywhere near production.
 
 ## My role
 
-**Sole automation engineer** on this system: architecture, build, and ongoing maintenance. I designed the pipeline, wrote every workflow and Apps Script function in it, ran the testing, handled the client communication, and still maintain it — the version markers throughout the code (`v27`, `v43`, `v82`…) are the running record of that maintenance, each one tied to a specific failure found in production.
+**Sole automation engineer** on this system: I designed it, built it, and still look after it. I wrote every workflow and every Apps Script function in it, did the testing, and handled the client side. The version markers scattered through the code (`v27`, `v43`, `v82`, and so on) are the running record of that upkeep. Each one is tied to a specific thing that went wrong in production and the fix for it.
 
 ---
 
-## What is and isn't here
+## What is and is not here
 
-These are **sanitized exports**, published with the client's permission. They will not run as-is, and that is deliberate.
+These are cleaned-up copies, shared with the client's permission. They will not run as they are, and that is on purpose.
 
-**Removed from every file:**
+**Taken out of every file:**
 
-- All credentials — API keys, tokens, and header auth values (replaced with `<PLACEHOLDER>` markers)
-- Credential names and IDs, workflow IDs, execution IDs, instance metadata
-- The n8n instance host, and every base, table, sheet and project identifier
-- Every client and employer name, plus any host, path or comment that would identify one
+- Every password, key and token (replaced with `<PLACEHOLDER>` markers)
+- Account names and IDs, workflow IDs, run IDs, and anything identifying the server it runs on
+- The web address of the n8n server, and every database, table, sheet and project ID
+- Every client and employer name, and any web address, file path or note that would point to one
 
-**One workflow is reduced rather than removed.** `00-link-collector.structure-only.json` keeps the real 26-node shape and most of its code, but its `Probe Careers API` node — ~386 KB of hand-written handlers keyed to a specific client's target boards — is replaced by a ~16 KB version. That reduced node keeps the input/output contract, the state-detection logic, and the cost-tier escalation verbatim, and stands in two representative handlers for the ~40 real ones. The engineering is there; the client's list of employers is not.
+**One workflow is trimmed rather than left out.** `00-link-collector.structure-only.json` keeps its real 26-step shape and most of its code, but one step, `Probe Careers API`, has been cut from about 386 KB down to about 16 KB. In the real system that step holds nearly 40 hand-written handlers, one for each kind of career site the client watches, and that list of sites is effectively the client's customer list. The trimmed version keeps what goes in and what comes out, keeps the location-reading logic, keeps the cost-saving logic, and includes two example handlers standing in for the 40 real ones. The engineering is here. The client's list is not.
 
-**Not published at all:** the One Link Companies workflow, the Apps Script menu code (that belongs in a separate repo), and every test, backup and data export from the working folder.
+**Not published at all:** the One Link Companies workflow, the Google Apps Script menu code (that is going in a separate repository), and every test file, backup and data export from the working folder.
 
-| File | Nodes | What it shows |
+| File | Steps | What it shows |
 |---|---:|---|
-| [`00-link-collector.structure-only.json`](workflows/00-link-collector.structure-only.json) | 26 | Fan-out across many site types, per-site handler dispatch, cost-tier escalation, run reporting |
-| [`01-main-filter.json`](workflows/01-main-filter.json) | 13 | URL normalisation, in-batch dedupe, masterlist check, row status write-back, error alerting |
-| [`02-data-scraper.json`](workflows/02-data-scraper.json) | 30 | Three-way fetch escalation, pre-LLM cost gate, LLM extraction, output validation, routed writes |
-| [`03-find-address.json`](workflows/03-find-address.json) | 10 | Candidate search, best-match scoring, graceful fallback when nothing matches |
-| [`04-sync-address-database.json`](workflows/04-sync-address-database.json) | 7 | Idempotent batched upsert — safe to re-run, never duplicates |
-| [`05-notify-slack-relay.json`](workflows/05-notify-slack-relay.json) | 3 | The secrets pattern: the workflow posts to a relay, the relay holds the credential |
+| [`00-link-collector.structure-only.json`](workflows/00-link-collector.structure-only.json) | 26 | Handling many kinds of site from one workflow, choosing the right handler per site, saving money on fetches, reporting the day's totals |
+| [`01-main-filter.json`](workflows/01-main-filter.json) | 13 | Tidying up links, removing repeats, checking against the master list, writing the result back to the sheet, raising an alert on failure |
+| [`02-data-scraper.json`](workflows/02-data-scraper.json) | 30 | Three ways of fetching a page in order of cost, skipping low-paying jobs before spending on AI, AI reading, checking the AI's answer, saving to the right place |
+| [`03-find-address.json`](workflows/03-find-address.json) | 10 | Searching for possible address matches, ranking them, and falling back gracefully when nothing fits |
+| [`04-sync-address-database.json`](workflows/04-sync-address-database.json) | 7 | Uploading in batches, safely, so running it twice never doubles anything |
+| [`05-notify-slack-relay.json`](workflows/05-notify-slack-relay.json) | 3 | The pattern for handling secrets: the workflow calls a small relay, and the relay is the only thing that holds the Slack credentials |
 
-### Reading them
+### How to look at them
 
-Import any file into n8n (**Workflows → Import from File**) to see the canvas, or read the JSON directly — the `jsCode` fields in the Code nodes carry the logic and the comments explaining why each piece is the way it is.
+Import any file into n8n (**Workflows, then Import from File**) to see it laid out visually, or just read the JSON. The `jsCode` sections inside the Code steps hold the actual logic, along with comments explaining why each part works the way it does.
 
-To actually run one you would need to supply your own credentials and replace every `<PLACEHOLDER>` with your own identifiers.
+To genuinely run one you would need to plug in your own accounts and replace every `<PLACEHOLDER>` with your own IDs.
 
 ---
 
-## Case study
+## The full case study
 
-The full write-up, with the workflow screenshots and a demo video, is at
+The longer write-up, with screenshots of every workflow and a demo video, is at
 **[emayourvirtualassistant.com/projects/joblinkos](https://emayourvirtualassistant.com/projects/joblinkos/)**.
 
-Built by **[Ema](https://emayourvirtualassistant.com)** — automation and data operations.
+Built by **[Ema](https://emayourvirtualassistant.com)**, automation and data operations.
 Open to automation projects, contract work, and full-time roles.
