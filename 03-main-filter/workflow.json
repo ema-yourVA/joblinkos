@@ -1,0 +1,721 @@
+{
+  "name": "Job Link OS - Main Filter FAST (layout only)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "<WEBHOOK_PATH>",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1408,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "<SHEET_ID>",
+          "cachedResultName": "NEW LINKS"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ (function(){ var b = ((($('Webhook').first() || {}).json || {}).body) || {}; var g = b.gid; return (g === undefined || g === null || g === '') ? '2096497007' : String(g); })() }}"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Status",
+              "lookupValue": "="
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Fetch Unfiltered Rows",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -1184,
+        304
+      ],
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Plan Chunks — normalise links, in-batch dedupe, build batched master-listformulas.\n// TEST_LIMIT > 0 caps how many rows this run processes (for safe testing). 0 = all.\n// Code body removed from the public copy (73 lines). The folder README says what it does."
+      },
+      "name": "Plan Chunks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Chunk Loop",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -736,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "mode": "list",
+          "value": "<AIRTABLE_BASE>",
+          "cachedResultName": "master-list"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "<AIRTABLE_TABLE>",
+          "cachedResultName": "<AIRTABLE_TABLE_NAME>"
+        },
+        "filterByFormula": "={{ $json.formula }}",
+        "options": {
+          "fields": [
+            "appLink"
+          ]
+        }
+      },
+      "name": "Check master-list(Batch)",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        -528,
+        320
+      ],
+      "retryOnFail": true,
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Decide Statuses — same dupe semantics as the per-row filter:\n// input link (query-stripped, lowercased) must be a SUBSTRING of a stored appLink;\n// culinaryagents links match by job id. Records already filtered to expired != \"Yes\".\n// Code body removed from the public copy (25 lines). The folder README says what it does."
+      },
+      "name": "Decide Statuses",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -304,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.status }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "new"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Is New?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -80,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "<AIRTABLE_BASE>",
+          "mode": "list",
+          "cachedResultName": "<AIRTABLE_BASE_NAME>",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>"
+        },
+        "table": {
+          "__rl": true,
+          "value": "<AIRTABLE_TABLE>",
+          "mode": "list",
+          "cachedResultName": "Entries",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>/<AIRTABLE_TABLE>"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Company": "={{ $json.Company }}",
+            "Job Link": "={{ $json.Link }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Company",
+              "displayName": "Company",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Job Link",
+              "displayName": "Job Link",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "name": "Push New to Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        144,
+        224
+      ],
+      "retryOnFail": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {},
+      "name": "Merge Chunk Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        368,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build one values:batchUpdate body for this chunk.\n// Inputs (via Merge): dup/error items ({status,row_number}) + Airtable push outputs for\n// new links (matched back to the chunk by Job Link → Transferred). A chunk whose pushes\n// failed arrives here too, but writes nothing: those rows keep an empty Status so the\n// next run retries them.\n// v48: the tab comes from the webhook body (Apps Script sends sheet + gid).\n// No body value ⇒ 'Main Filter', i.e. the pre-v48 behaviour.\n// Code body removed from the public copy (31 lines). The folder README says what it does."
+      },
+      "name": "Build Batch Write",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        592,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/<SHEET_ID>/values:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.batch) }}",
+        "options": {}
+      },
+      "name": "Write Statuses",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1024,
+        320
+      ],
+      "retryOnFail": false,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// master-listsearch failed for this chunk — flag every link for manual check.\n// v48: the tab comes from the webhook body (Apps Script sends sheet + gid).\n// No body value ⇒ 'Main Filter', i.e. the pre-v48 behaviour.\n// Code body removed from the public copy (7 lines). The folder README says what it does."
+      },
+      "name": "Chunk Error Statuses",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -304,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "<SLACK_CHANNEL_ID>",
+          "cachedResultName": "data-entry"
+        },
+        "text": "=:warning: *Main Filter FAST — master-listcheck failed for a chunk*\n\n*Tab:* {{ ((($('Webhook').first() || {}).json || {}).body || {}).sheet || 'Main Filter' }}\n*Chunk:* {{ $('Chunk Loop').first().json.chunkIndex + 1 }} / {{ $('Chunk Loop').first().json.totalChunks }}\n*Links in chunk:* {{ $('Chunk Loop').first().json.links.length }}\n*Error:* {{ $json.error?.message ?? 'see execution' }}\n*Execution:* {{ $execution.id }}\n\n_All links in this chunk were set to \"Error - Manual Check\"._",
+        "otherOptions": {
+          "includeLinkToWorkflow": true,
+          "mrkdwn": true
+        }
+      },
+      "name": "Notify Chunk Failed",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        -528,
+        544
+      ],
+      "retryOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "<SLACK_CHANNEL_ID>",
+          "cachedResultName": "data-entry"
+        },
+        "text": "=:warning: *Main Filter FAST — status write to the sheet failed*\n\n*Tab:* {{ ((($('Webhook').first() || {}).json || {}).body || {}).sheet || 'Main Filter' }}\n*Chunk:* {{ $('Chunk Loop').first().json.chunkIndex + 1 }} / {{ $('Chunk Loop').first().json.totalChunks }}\n*Error:* {{ $json.error?.message ?? 'see execution' }}\n*Execution:* {{ $execution.id }}\n\n_Affected rows keep an empty Status and will be retried on the next run._",
+        "otherOptions": {
+          "includeLinkToWorkflow": true,
+          "mrkdwn": true
+        }
+      },
+      "name": "Notify Write Failed",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        1024,
+        544
+      ],
+      "retryOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "<SLACK_CHANNEL_ID>",
+          "cachedResultName": "data-entry"
+        },
+        "text": "=:warning: *Main Filter FAST — Airtable push failed*\n\n*Tab:* {{ ((($('Webhook').first() || {}).json || {}).body || {}).sheet || 'Main Filter' }}\n*Chunk:* {{ $('Chunk Loop').first().json.chunkIndex + 1 }} / {{ $('Chunk Loop').first().json.totalChunks }}\n*Rows affected:* {{ $json.failed }}\n*Error:* {{ $json.message }}\n*Example link:* {{ $json.sample_link }}\n*Execution:* {{ $execution.id }}\n\n{{ $json.fatal ? '_BLOCKING — the run is stopping now. Those rows keep an empty Status and will be retried once this is fixed._' : '_Rows keep an empty Status (NOT pushed) and will be retried on the next run. The run continues._' }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": true,
+          "mrkdwn": true
+        }
+      },
+      "name": "Notify Push Failed",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        560,
+        64
+      ],
+      "retryOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate every failed Airtable create in this chunk into ONE item.\n// Was: the Slack node ran per failed row (85 messages in a single run).\n// Also decides whether the failure blocks the whole run or is worth retrying later.\n// Code body removed from the public copy (25 lines). The folder README says what it does."
+      },
+      "name": "Summarize Push Errors",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        336,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f1",
+              "leftValue": "={{ $('Summarize Push Errors').first().json.fatal }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Push Fatal?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        784,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "errorMessage": "=Airtable is refusing every new record — {{ $('Summarize Push Errors').first().json.message }} (chunk {{ $('Chunk Loop').first().json.chunkIndex + 1 }} of {{ $('Chunk Loop').first().json.totalChunks }}). Rows keep an empty Status and will be picked up again on the next run."
+      },
+      "name": "Stop: Airtable Blocked",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        1024,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "w1",
+              "leftValue": "={{ $json.hasData }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Anything to Write?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        800,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Salary Gate — read the posting BEFORE it can reach Airtable.\n// Rows whose posting shows no pay figure get Status \"No Salary\": \"Is New?\" then keeps them out of\n// the Airtable push and \"Build Batch Write\" writes the status to column D of the sheet.\n//\n// Watched companies (2026-08-01): McLaren (~4% of postings publish pay), Benevis (~32%).\n// Add a { name, host } pair to extend. Fail-open everywhere: an unreadable page, a dead link or a\n// blown time budget leaves the row \"new\", i.e. exactly the pre-gate behaviour — the Data Scraper's\n// own no_salary route still catches it downstream.\n// Code body removed from the public copy (128 lines). The folder README says what it does."
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -192,
+        480
+      ],
+      "name": "Salary Gate"
+    },
+    {
+      "parameters": {
+        "jsCode": "// v52 (2026-08-13) — tell Slack the Final Check has finished.\n// Runs on the Chunk Loop's DONE branch, i.e. once, after the last chunk is written.\n// Code body removed from the public copy (86 lines). The folder README says what it does."
+      },
+      "name": "Notify: Final Check Done",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -784,
+        544
+      ],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Fetch Unfiltered Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Unfiltered Rows": {
+      "main": [
+        [
+          {
+            "node": "Plan Chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan Chunks": {
+      "main": [
+        [
+          {
+            "node": "Chunk Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chunk Loop": {
+      "main": [
+        [
+          {
+            "node": "Notify: Final Check Done",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check master-list(Batch)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check master-list(Batch)": {
+      "main": [
+        [
+          {
+            "node": "Decide Statuses",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Chunk Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Chunk Failed": {
+      "main": [
+        [
+          {
+            "node": "Chunk Error Statuses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chunk Error Statuses": {
+      "main": [
+        [
+          {
+            "node": "Write Statuses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide Statuses": {
+      "main": [
+        [
+          {
+            "node": "Salary Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is New?": {
+      "main": [
+        [
+          {
+            "node": "Push New to Airtable",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Chunk Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Push New to Airtable": {
+      "main": [
+        [
+          {
+            "node": "Merge Chunk Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Summarize Push Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Chunk Results": {
+      "main": [
+        [
+          {
+            "node": "Build Batch Write",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Batch Write": {
+      "main": [
+        [
+          {
+            "node": "Anything to Write?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Statuses": {
+      "main": [
+        [
+          {
+            "node": "Chunk Loop",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Write Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Write Failed": {
+      "main": [
+        [
+          {
+            "node": "Chunk Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize Push Errors": {
+      "main": [
+        [
+          {
+            "node": "Notify Push Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Push Failed": {
+      "main": [
+        [
+          {
+            "node": "Push Fatal?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Push Fatal?": {
+      "main": [
+        [
+          {
+            "node": "Stop: Airtable Blocked",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Chunk Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Anything to Write?": {
+      "main": [
+        [
+          {
+            "node": "Write Statuses",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Chunk Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salary Gate": {
+      "main": [
+        [
+          {
+            "node": "Is New?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}
