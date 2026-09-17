@@ -1,0 +1,508 @@
+{
+  "name": "Job Link OS - Find Address (layout only)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "seconds"
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        768,
+        -1016
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "<AIRTABLE_BASE>",
+          "mode": "list",
+          "cachedResultName": "<AIRTABLE_BASE_NAME>",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>"
+        },
+        "table": {
+          "__rl": true,
+          "value": "<AIRTABLE_TABLE>",
+          "mode": "list",
+          "cachedResultName": "Entries",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>/<AIRTABLE_TABLE>"
+        },
+        "filterByFormula": "{Status} = 'Find Address'",
+        "options": {}
+      },
+      "name": "Fetch Find Address Records",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1440,
+        -1016
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Loop Records",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1664,
+        -1016
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Record v12\n// KEY FIXES:\n//   1. Zip: use LAST 5-digit number (zip at end, street number at start)\n//   2. City loop: only skip 2-letter state codes — NOT full state names.\n//      So 'New York, New York, United States' → city='New York' ✓\n//      And 'Garden Grove, California' → city='Garden Grove' ✓\n//   3. City embedded in street token (e.g. '7 South Orchard Road Aurora')\n// Code body removed from the public copy (328 lines). The folder README says what it does."
+      },
+      "name": "Parse Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1888,
+        -1088
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://<SUPABASE_PROJECT>.supabase.co/rest/v1/addresses",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "full_text,company,street,city,state,zip"
+            },
+            {
+              "name": "or",
+              "value": "={{ $json.q_or }}"
+            },
+            {
+              "name": "limit",
+              "value": "500"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "name": "Search Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2112,
+        -1088
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Score & Decide v13 (2026-08-13)\n// Runs ONCE for all input items. Input: 0-N candidate rows from Search Supabase.\n// Always returns exactly 1 item.\n//\n// v13 fixes, all reported from live data:\n//   • STATE: v12 compared row.state to p_state as raw strings, so \"California\" never matched \"CA\".\n//     Both sides are now reduced to a 2-letter code, so either storage style works either way.\n//   • ZIP: compared as a raw string, so \"12549-1234\" / \"12549 \" / numeric 12549 all missed.\n//     Both sides are now reduced to their first five digits.\n//   • RECALL: two new lowest-priority tiers for the common \"City, ST\" posting with no street or zip.\n// Code body removed from the public copy (116 lines). The folder README says what it does."
+      },
+      "name": "Score & Decide",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2336,
+        -1088
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.found_match }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "IF Found Match",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2560,
+        -1088
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "<AIRTABLE_BASE>",
+          "mode": "list",
+          "cachedResultName": "<AIRTABLE_BASE_NAME>",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>"
+        },
+        "table": {
+          "__rl": true,
+          "value": "<AIRTABLE_TABLE>",
+          "mode": "list",
+          "cachedResultName": "Entries",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>/<AIRTABLE_TABLE>"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.record_id }}",
+            "Address": "={{ $json.matched_address }}",
+            "Status": "Qualified"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true
+            },
+            {
+              "id": "Address",
+              "displayName": "Address",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false
+            }
+          ]
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "name": "Update Airtable - Match Found",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        2784,
+        -1008
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "<AIRTABLE_BASE>",
+          "mode": "list",
+          "cachedResultName": "<AIRTABLE_BASE_NAME>",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>"
+        },
+        "table": {
+          "__rl": true,
+          "value": "<AIRTABLE_TABLE>",
+          "mode": "list",
+          "cachedResultName": "Entries",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>/<AIRTABLE_TABLE>"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.record_id }}",
+            "Status": "Qualified"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false
+            }
+          ]
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "name": "Update Airtable - No Match",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        2784,
+        -824
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Code body removed from the public copy (1 lines). The folder README says what it does."
+      },
+      "name": "Loop Done",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1888,
+        -1280
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://<N8N_HOST>/webhook/<WEBHOOK_PATH>",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "running"
+            },
+            {
+              "name": "workflowId",
+              "value": "BhBDlVvBO69vvIZ6"
+            },
+            {
+              "name": "limit",
+              "value": "10"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-N8N-API-KEY",
+              "value": "<REMOVED_ID>.<REMOVED_ID>.<REMOVED_ID>"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Check Running (Find Address)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        992,
+        -1016
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "fa-running-001",
+              "leftValue": "={{ $json.data.length }}",
+              "rightValue": 1,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Already Running (FA)?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1216,
+        -1016
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check Running (Find Address)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Find Address Records": {
+      "main": [
+        [
+          {
+            "node": "Loop Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Records": {
+      "main": [
+        [
+          {
+            "node": "Loop Done",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Parse Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Record": {
+      "main": [
+        [
+          {
+            "node": "Search Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Supabase": {
+      "main": [
+        [
+          {
+            "node": "Score & Decide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score & Decide": {
+      "main": [
+        [
+          {
+            "node": "IF Found Match",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Found Match": {
+      "main": [
+        [
+          {
+            "node": "Update Airtable - Match Found",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Airtable - No Match",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Airtable - Match Found": {
+      "main": [
+        [
+          {
+            "node": "Loop Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Airtable - No Match": {
+      "main": [
+        [
+          {
+            "node": "Loop Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Running (Find Address)": {
+      "main": [
+        [
+          {
+            "node": "Already Running (FA)?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already Running (FA)?": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Fetch Find Address Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}
