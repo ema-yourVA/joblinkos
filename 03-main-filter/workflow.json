@@ -26,7 +26,7 @@
         "sheetName": {
           "__rl": true,
           "mode": "id",
-          "value": "={{ (function(){ var b = ((($('Webhook').first() || {}).json || {}).body) || {}; var g = b.gid; return (g === undefined || g === null || g === '') ? '2096497007' : String(g); })() }}"
+          "value": "={{ (function(){ var b = ((($('Webhook').first() || {}).json || {}).body) || {}; var g = b.gid; return (g === undefined || g === null || g === '') ? '<SHEET_TAB_ID>' : String(g); })() }}"
         },
         "filtersUI": {
           "values": [

@@ -31,7 +31,7 @@
           "value": 195798639,
           "mode": "list",
           "cachedResultName": "Companies",
-          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/<SHEET_ID>/edit#gid=195798639"
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/<SHEET_ID>/edit#gid=<SHEET_TAB_ID>"
         },
         "options": {}
       },
@@ -251,7 +251,7 @@
           "value": 195798639,
           "mode": "list",
           "cachedResultName": "Companies",
-          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/<SHEET_ID>/edit#gid=195798639"
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/<SHEET_ID>/edit#gid=<SHEET_TAB_ID>"
         },
         "columns": {
           "mappingMode": "defineBelow",
