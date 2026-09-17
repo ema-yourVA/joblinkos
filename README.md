@@ -41,17 +41,6 @@ Two decisions did most of the heavy lifting:
 
 **Do not assume an empty answer is the only kind of bad answer.** The worst mistakes in this system were never blank pages. They were "prove you are not a robot" pages: full of content, and they looked like a page that had loaded fine. So every fetch result is checked for what it actually is (proper JSON, proper XML, enough real text, none of the tell-tale robot-check wording) before it counts as a success.
 
-## Before and after
-
-| | Before, all by hand | After, with JobLinkOS |
-|---|---|---|
-| **Collecting links** | Open 300+ sites one by one, sometimes on a VPN, copy and paste each link | One click, every site, only the states that count |
-| **Removing repeats** | Search the database for every link, manually | Two passes: colour-coded in the sheet, then checked against the full master list |
-| **Reading a posting** | Open the link, copy 10+ fields one at a time | AI reads it, roughly one record every 30 seconds |
-| **Completing an address** | Look through the master list job by job | Matched automatically against 95,000 addresses, with a backup plan if nothing fits |
-| **Things going wrong** | Noticed whenever somebody happened to spot it | A Slack message naming the record and the reason |
-| **Work per batch** | Hours | Two clicks |
-
 ## How it all fits together
 
 ```mermaid
@@ -113,7 +102,7 @@ Separately, an audit found the scraping service had quietly been charging every 
 | **Runs the workflows** | n8n, self-hosted |
 | **Control panel** | Google Sheets and Google Apps Script |
 | **Databases** | Airtable for the job records, Supabase (PostgreSQL) for the address list |
-| **AI** | DeepSeek Chat v3, through OpenRouter |
+| **AI** | DeepSeek V4 Flash, through OpenRouter |
 | **Fetching pages** | plain web request first, then Jina AI Reader, then the Decodo scraping service |
 | **Alerts** | Slack, sent through a small relay so the Slack address never sits inside a client workflow |
 | **Version control** | GitHub, for the workflow files |
@@ -141,22 +130,35 @@ These are cleaned-up copies, shared with the client's permission. They will not 
 - The web address of the n8n server, and every database, table, sheet and project ID
 - Every client and employer name, and any web address, file path or note that would point to one
 
-**One workflow is trimmed rather than left out.** `00-link-collector.structure-only.json` keeps its real 26-step shape and most of its code, but one step, `Probe Careers API`, has been cut from about 386 KB down to about 16 KB. In the real system that step holds nearly 40 hand-written handlers, one for each kind of career site the client watches, and that list of sites is effectively the client's customer list. The trimmed version keeps what goes in and what comes out, keeps the location-reading logic, keeps the cost-saving logic, and includes two example handlers standing in for the 40 real ones. The engineering is here. The client's list is not.
+**Code bodies are removed, the design is not.** Each part below keeps its real steps, its
+real connections and its real settings, plus the comments that explain why each step works
+the way it does. What is taken out is the code inside the steps, along with every login,
+key, ID, client name and real job link.
 
-**Not published at all:** the One Link Companies workflow, the Google Apps Script menu code (that is going in a separate repository), and every test file, backup and data export from the working folder.
+**Two parts are not published.** The **Initial Filter** is the sheet menu the client
+uses: it colours in repeats, gives every row a tracking number, and deletes the marked
+rows. The **Error Handler** is the one place that catches failures from every workflow, so
+silence means everything worked. Both are described here rather than shared, because the
+first is written around the client's own sheet and the second is mostly account details.
 
-| File | Steps | What it shows |
+| Part | Steps | What it shows |
 |---|---:|---|
-| [`00-link-collector.structure-only.json`](workflows/00-link-collector.structure-only.json) | 26 | Handling many kinds of site from one workflow, choosing the right handler per site, saving money on fetches, reporting the day's totals |
-| [`01-main-filter.json`](workflows/01-main-filter.json) | 13 | Tidying up links, removing repeats, checking against the master list, writing the result back to the sheet, raising an alert on failure |
-| [`02-data-scraper.json`](workflows/02-data-scraper.json) | 30 | Three ways of fetching a page in order of cost, skipping low-paying jobs before spending on AI, AI reading, checking the AI's answer, saving to the right place |
-| [`03-find-address.json`](workflows/03-find-address.json) | 10 | Searching for possible address matches, ranking them, and falling back gracefully when nothing fits |
-| [`04-sync-address-database.json`](workflows/04-sync-address-database.json) | 7 | Uploading in batches, safely, so running it twice never doubles anything |
-| [`05-notify-slack-relay.json`](workflows/05-notify-slack-relay.json) | 3 | The pattern for handling secrets: the workflow calls a small relay, and the relay is the only thing that holds the Slack credentials |
+| [Link Collector](01-link-collector/) | 26 | Handling nearly 40 kinds of careers site from one workflow, three fetch routes in order of cost, reporting the day's totals |
+| [Main Filter](03-main-filter/) | 21 | Removing repeats in batches, checking against the master list, writing every result back, a separate alert per kind of failure |
+| [Data Scraper](04-data-scraper/) | 30 | Cheapest fetch first, dropping low-paying jobs before the AI runs, AI reading, then checking the AI's answer in code |
+| [Find Address](05-find-address/) | 12 | Searching 95,000 Postgres rows per record, scoring the candidates, and refusing a weak match |
+| [One Link Companies](06-one-link-companies/) | 41 | Pages that list every job at once: the AI returns only titles, the bodies are cut out of the page in code |
+| [Sync Address Database](07-sync-address-database/) | 7 | Uploading in batches so running it twice never doubles anything. Full code published |
+| [Notify Slack](09-notify-slack/) | 3 | The pattern for handling secrets: one relay holds the credentials, everything else sends numbers |
+| [Slack Bot](10-slack-bot/) | 19 | Running the day's check and answering questions from Slack, with a report that only mentions exceptions |
+
+**Also worth reading:** [When the code looked right and wasn't](docs/when-the-code-looked-right.md)
+— four real cases where nothing failed, the run reported success, and the answer was still
+wrong. It is the shortest way to see how I work.
 
 ### How to look at them
 
-Import any file into n8n (**Workflows, then Import from File**) to see it laid out visually, or just read the JSON. The `jsCode` sections inside the Code steps hold the actual logic, along with comments explaining why each part works the way it does.
+Import any `workflow.json` into n8n (**Workflows, then Import from File**) to see it laid out visually, or just read the JSON. The comments kept at the top of each Code step explain what that step does and why.
 
 To genuinely run one you would need to plug in your own accounts and replace every `<PLACEHOLDER>` with your own IDs.
 
