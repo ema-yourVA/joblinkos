@@ -1,0 +1,1023 @@
+{
+  "name": "Job Link OS - Link Collector (layout only)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "<WEBHOOK_PATH>",
+        "options": {
+          "responseData": "Link Collector started."
+        }
+      },
+      "name": "Webhook (Sheet Button)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1616,
+        344
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "<SHEET_ID>",
+          "mode": "list",
+          "cachedResultName": "NEW LINKS",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/<SHEET_ID>/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 195798639,
+          "mode": "list",
+          "cachedResultName": "Companies",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/<SHEET_ID>/edit#gid=195798639"
+        },
+        "options": {}
+      },
+      "name": "Fetch Companies (Adel / Ema)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -1168,
+        440
+      ],
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// v27: careers URLs that can never be scraped as given, mapped to the real board.\n// [test, rewrite] — first match wins, applied before routing so the right handler is chosen.\n// Code body removed from the public copy (150 lines). The folder README says what it does."
+      },
+      "name": "Prep Companies",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -944,
+        440
+      ],
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Loop (rate limit)",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -496,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "is-taleo",
+              "leftValue": "={{ $json.is_taleo }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Is Taleo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -272,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Code body removed from the public copy (94 lines). The folder README says what it does."
+      },
+      "name": "Taleo Collect Links",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://scraper-api.decodo.com/v2/scrape",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "<REMOVED_CREDENTIAL>"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"url\": {{ JSON.stringify($('Loop (rate limit)').item.json.job_link) }},\n  \"headless\": \"html\",\n  \"geo\": \"United States\",\n  \"proxy_pool\": \"premium\",\n  \"wait_time\": 5\n}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "name": "Decodo Fetch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        624,
+        608
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Code body removed from the public copy (285 lines). The folder README says what it does."
+      },
+      "name": "Extract Job Links",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format Sheet Rows — one sheet row per job link (+ canonical-URL cleaning).\n//\n// CANONICAL LINK RULE (2026-07-31, widened 2026-08-01): the sheet gets the job's own unique URL —\n// https://careers.example-company.com/jobs/123 not .../770506?<QUERY>\n// https://careers.example-company.com/jobs/123 not .../507?<QUERY>\n// Dropped: analytics, cache-busters, UI-language, board-skin and referrer params, plus any param\n// with an empty value. Anything that could identify or route the posting (clientkey, cid, ccId,\n// jobId, R_ID, req, req_loc, jo_num, opportunityId, POSTING_ID, AppliTrackJobId, partnerid, siteid,\n// PageType, embed, embedded, ...) is left untouched, so a clean-up can never turn a working link\n// into a dead one. Every name in the 2026-08-01 group was verified live: full URL vs stripped URL\n// Code body removed from the public copy (342 lines). The folder README says what it does."
+      },
+      "name": "Format Sheet Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        392
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "links-found",
+              "leftValue": "={{ $json.links_found }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Links Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1296,
+        392
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/<SHEET_ID>/values/Database!A:E:append",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: $input.all().map(i => [i.json.Date, i.json.Company, i.json.Link, \"\", \"\"]) }) }}",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "name": "Append Links to NEW LINKS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1520,
+        296
+      ],
+      "executeOnce": true,
+      "retryOnFail": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "<SHEET_ID>",
+          "mode": "list",
+          "cachedResultName": "NEW LINKS"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 195798639,
+          "mode": "list",
+          "cachedResultName": "Companies",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/<SHEET_ID>/edit#gid=195798639"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Company": "={{ $('Loop (rate limit)').item.json.company }}",
+            "Last Update": "={{ $now.setZone('Asia/Manila').toFormat('M/d/yyyy h:mm a') }}",
+            "Priority": "",
+            "Job Link": "={{ $('Loop (rate limit)').item.json.sheet_link }}"
+          },
+          "matchingColumns": [
+            "Job Link"
+          ],
+          "schema": [
+            {
+              "id": "Company",
+              "displayName": "Company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Job Link",
+              "displayName": "Job Link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Last Update",
+              "displayName": "Last Update",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Priority",
+              "displayName": "Priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "name": "Stamp Status (Fetched At)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1744,
+        392
+      ],
+      "executeOnce": true,
+      "retryOnFail": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/<SHEET_ID>/values/Companies!G{{ $('Loop (rate limit)').item.json.queue_pos + 1 }}?<QUERY>",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [[ $('Format Sheet Rows').all().filter(i => i.json.links_found).length ]] }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "Update Progress",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2416,
+        584
+      ],
+      "executeOnce": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "is-api",
+              "leftValue": "={{ $json.is_api }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Is API ATS?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -48,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Code body removed from the public copy (179 lines). The folder README says what it does."
+      },
+      "name": "API Collect Links",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Code body removed from the public copy (6275 lines). The folder README says what it does."
+      },
+      "name": "Probe Careers API",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        176,
+        536
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "jibe-ok",
+              "leftValue": "={{ $json.jibe_ok }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Careers API OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        400,
+        536
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "<AIRTABLE_BASE>",
+          "mode": "list",
+          "cachedResultName": "Companies",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>"
+        },
+        "table": {
+          "__rl": true,
+          "value": "<AIRTABLE_TABLE>",
+          "mode": "list",
+          "cachedResultName": "Assignments",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>/<AIRTABLE_TABLE>"
+        },
+        "filterByFormula": "={{ '{Company} = \"' + $('Loop (rate limit)').item.json.company.replace(/\"/g, '') + '\"' }}",
+        "returnAll": false,
+        "limit": 1,
+        "options": {}
+      },
+      "name": "Find Airtable Record",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        1968,
+        392
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "<AIRTABLE_BASE>",
+          "mode": "list",
+          "cachedResultName": "Companies",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>"
+        },
+        "table": {
+          "__rl": true,
+          "value": "<AIRTABLE_TABLE>",
+          "mode": "list",
+          "cachedResultName": "Assignments",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>/<AIRTABLE_TABLE>"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "Status": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "name": "Sync Airtable Status",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        2192,
+        392
+      ],
+      "executeOnce": true,
+      "retryOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/<SHEET_ID>/values/Companies!F2:G61",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: $input.all().map(i => [i.json.company, '']).concat(Array.from({ length: 60 }, () => ['', ''])).slice(0, 60) }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "Write Run Queue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -720,
+        248
+      ],
+      "executeOnce": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "not-warning",
+              "leftValue": "={{ $json.warning === true }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Any Selected?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -720,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "ol1",
+              "leftValue": "={{ $json.one_link_pending }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "One Link Selected?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -720,
+        632
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://<N8N_HOST>/webhook/<WEBHOOK_PATH>",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ source: \"link-collector\", collector_execution: $execution.id, count: $json.one_link_pending, companies: $json.one_link_names }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "Hand Off to One Link",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -496,
+        632
+      ],
+      "executeOnce": true,
+      "retryOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 0 8,9,10,11 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1616,
+        536
+      ],
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/<SHEET_ID>/values/'HQ%20Addresses'!A%3AB",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "Read HQ Addresses",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1392,
+        440
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// v51 (2026-08-13) — tell Slack how many links the day collected.\n// Runs on the loop's DONE branch, i.e. once per batch, after the last company.\n// Code body removed from the public copy (183 lines). The folder README says what it does."
+      },
+      "name": "Notify: Links Collected",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        224
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "Loop DONE branch. Counts the batch, tallies the day in static data, and on a scheduled batch 4 POSTs to the notify relay. Batches 1-3 and manual runs send nothing."
+    }
+  ],
+  "connections": {
+    "Webhook (Sheet Button)": {
+      "main": [
+        [
+          {
+            "node": "Read HQ Addresses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Companies (Adel / Ema)": {
+      "main": [
+        [
+          {
+            "node": "Prep Companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Companies": {
+      "main": [
+        [
+          {
+            "node": "Any Selected?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Write Run Queue",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "One Link Selected?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop (rate limit)": {
+      "main": [
+        [
+          {
+            "node": "Notify: Links Collected",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Taleo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Taleo?": {
+      "main": [
+        [
+          {
+            "node": "Taleo Collect Links",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is API ATS?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Taleo Collect Links": {
+      "main": [
+        [
+          {
+            "node": "Format Sheet Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decodo Fetch": {
+      "main": [
+        [
+          {
+            "node": "Extract Job Links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Job Links": {
+      "main": [
+        [
+          {
+            "node": "Format Sheet Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Sheet Rows": {
+      "main": [
+        [
+          {
+            "node": "Links Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Links Found?": {
+      "main": [
+        [
+          {
+            "node": "Append Links to NEW LINKS",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stamp Status (Fetched At)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Links to NEW LINKS": {
+      "main": [
+        [
+          {
+            "node": "Stamp Status (Fetched At)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop (rate limit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stamp Status (Fetched At)": {
+      "main": [
+        [
+          {
+            "node": "Find Airtable Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Progress": {
+      "main": [
+        [
+          {
+            "node": "Loop (rate limit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is API ATS?": {
+      "main": [
+        [
+          {
+            "node": "API Collect Links",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Probe Careers API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API Collect Links": {
+      "main": [
+        [
+          {
+            "node": "Format Sheet Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Probe Careers API": {
+      "main": [
+        [
+          {
+            "node": "Careers API OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Careers API OK?": {
+      "main": [
+        [
+          {
+            "node": "Format Sheet Rows",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Decodo Fetch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Airtable Record": {
+      "main": [
+        [
+          {
+            "node": "Sync Airtable Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sync Airtable Status": {
+      "main": [
+        [
+          {
+            "node": "Update Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Selected?": {
+      "main": [
+        [
+          {
+            "node": "Loop (rate limit)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "One Link Selected?": {
+      "main": [
+        [
+          {
+            "node": "Hand Off to One Link",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read HQ Addresses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read HQ Addresses": {
+      "main": [
+        [
+          {
+            "node": "Fetch Companies (Adel / Ema)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}
