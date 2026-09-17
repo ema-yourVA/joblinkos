@@ -1,0 +1,1664 @@
+{
+  "name": "Job Link OS - One Link Companies (layout only)",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Run Manually",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1616,
+        752
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "<WEBHOOK_PATH>",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1616,
+        944
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "<SHEET_ID>",
+          "cachedResultName": "NEW LINKS"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": 195798639,
+          "cachedResultName": "Companies"
+        },
+        "options": {}
+      },
+      "name": "Fetch Companies",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -1392,
+        848
+      ],
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prep Companies — pick the rows Ema flagged Status = \"one link\".\n// The flag lives in the Companies tab so she can add/remove companies without a code change.\n// \"contains\", not \"equals\" — the Status cell also carries notes\n// (\"one link claude\", \"Site's job has no salary\"), so an exact match silently\n// dropped Company A.\n// Two of Ema's three categories are handled here. \"one link\" = every opening on one\n// shared careers URL. \"per-job URLs\" = real per-job links exist, but the page behind\n// them is a sign-in wall or JS shell with no readable posting, so the content has to be\n// pulled from the platform instead. Category three (\"ok\") stays in the Link Collector.\n// Code body removed from the public copy (56 lines). The folder README says what it does."
+      },
+      "name": "Prep Companies",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1168,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 6
+      },
+      "name": "Settle",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -944,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/<SHEET_ID>/values/Companies!F2:G61",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "Read Queue F:G",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -720,
+        848
+      ],
+      "executeOnce": true,
+      "retryOnFail": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Seed Queue — claim a row in the Companies tab for every company in this run and\n// write the names in immediately, so the queue shows what is happening from the start\n// instead of staying blank until the run finishes.\n//\n// Same F2:G61 block the Link Collector uses. A company already listed in F keeps its\n// row; one that is not gets the first free row. Nothing is ever cleared, so a mixed run\n// (some companies here, some in the collector) cannot wipe the other's display.\n// Code body removed from the public copy (35 lines). The folder README says what it does."
+      },
+      "name": "Seed Queue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -496,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/<SHEET_ID>/values:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.batch) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "Write Queue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -272,
+        848
+      ],
+      "retryOnFail": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fan Companies — back to one item per company, now carrying its queue row.\n// Code body removed from the public copy (2 lines). The folder README says what it does."
+      },
+      "name": "Fan Companies",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "reset": false
+        }
+      },
+      "name": "Loop (rate limit)",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        176,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.job_link }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Accept",
+              "value": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            },
+            {
+              "name": "Accept-Language",
+              "value": "en-US,en;q=0.9"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 20000
+        }
+      },
+      "name": "Fetch Job Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        848
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Code body removed from the public copy (754 lines). The folder README says what it does."
+      },
+      "name": "Clean HTML → Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.fetch_failed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Fetch OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        848,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://scraper-api.decodo.com/v2/scrape",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "<REMOVED_CREDENTIAL>"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"url\": {{ JSON.stringify($('Loop (rate limit)').item.json.job_link) }},\n  \"headless\": \"html\",\n  \"geo\": \"United States\",\n  \"proxy_pool\": \"premium\",\n  \"wait_time\": 5\n}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "name": "Decodo Fetch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1072,
+        776
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Process Decodo Web Scraping API response.\n// Decodo returns { results: [ { content, status_code, ... } ] }.\n// content is the JS-rendered HTML of the target. We mirror \"Clean HTML -> Text\"\n// output so the rest of the pipeline is unchanged.\n// Code body removed from the public copy (198 lines). The folder README says what it does."
+      },
+      "name": "Process Decodo Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1296,
+        776
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Page Ready — one canonical item per company, whichever fetch path produced it,\n// plus the split prompt. Keeping the prompt here (not in the HTTP node) keeps the\n// JSON body of \"Split Postings\" trivial.\n// Code body removed from the public copy (42 lines). The folder README says what it does."
+      },
+      "name": "Page Ready",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "h1",
+              "leftValue": "={{ $json.fetch_failed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "h2",
+              "leftValue": "={{ $('Loop (rate limit)').item.json.mode }}",
+              "rightValue": "per_job",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Has Text?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1744,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"deepseek/deepseek-v4-flash\",\n  \"messages\": [\n    { \"role\": \"system\", \"content\": {{ JSON.stringify($json.split_system) }} },\n    { \"role\": \"user\", \"content\": {{ JSON.stringify($json.split_user) }} }\n  ],\n  \"temperature\": 0,\n  \"reasoning\": { \"enabled\": false },\n  \"max_tokens\": 2048,\n  \"response_format\": { \"type\": \"json_object\" },\n  \"provider\": { \"order\": [\"DeepInfra\", \"Baidu\", \"StreamLake\", \"DeepSeek\"], \"allow_fallbacks\": true, \"require_parameters\": true }\n}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "name": "Split Postings",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1968,
+        776
+      ],
+      "retryOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Collect Company — turn the title list into real text blocks.\n// The LLM only returns titles (cheap, and titles are verbatim), so the posting\n// bodies are sliced out of the page text here in code: block N runs from title N\n// to title N+1. That means the body is always the page's own words, never the\n// model's paraphrase.\n// Code body removed from the public copy (304 lines). The folder README says what it does."
+      },
+      "name": "Collect Company",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2192,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/<SHEET_ID>/values/Companies!G{{ $('Loop (rate limit)').item.json.queue_row || 61 }}?<QUERY>",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [[ ($json.postings || []).length + ' found, reading…' ]] }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "Update Progress",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2416,
+        848
+      ],
+      "retryOnFail": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// carry the company + its postings back into the loop, not the Sheets receipt\n// Code body removed from the public copy (2 lines). The folder README says what it does."
+      },
+      "name": "Resume Loop",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        920
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build master-listQuery — ONE search for every one-link company at once.\n// Same substring semantics as Main Filter FAST: a stored appLink COUNTS as a hit\n// when it contains the careers URL, which is what makes the \"#Role-Name\" anchors\n// master-listalready uses (e.g. careers.example-company.com/jobs/123\n// come back for a plain careers-page query.\n//\n// v71 (2026-09-01) — the 2026-09-01 run wrote 120 rows that were already in master-listbecause this\n// query could not reach them:\n//   • the key carried the SHEET's query string, which never matches a stored per-job link\n//       sheet   careers.example-company.com/jobs/123\n// Code body removed from the public copy (52 lines). The folder README says what it does."
+      },
+      "name": "Build master-listQuery",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<AIRTABLE_BASE>",
+          "cachedResultName": "master-list"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "<AIRTABLE_TABLE>",
+          "cachedResultName": "<AIRTABLE_TABLE_NAME>"
+        },
+        "filterByFormula": "={{ $json.formula }}",
+        "options": {
+          "fields": [
+            "appLink",
+            "roleName",
+            "payQuantityMin",
+            "payQuantityMax",
+            "payUnit",
+            "address",
+            "roleDescriptionCompany",
+            "expired"
+          ]
+        }
+      },
+      "name": "Check master-list",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        624,
+        440
+      ],
+      "retryOnFail": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Explode Postings — pair every posting found on a page with what master-listalready\n// has for that page, and build the per-job text the extractor will read.\n//\n// Address: these pages rarely repeat the office address inside each posting, so it\n// is resolved once per company — from the posting itself, else from the company's\n// existing master-listrows (authoritative: that is the address master-listalready files\n// them under), else from an address printed anywhere on the page. It is handed to\n// the extractor in the same \"STRUCTURED DATA / HIRING LOCATIONS\" shape the Data\n// Scraper's parser already knows how to rescue states from.\n// Code body removed from the public copy (85 lines). The folder README says what it does."
+      },
+      "name": "Explode Postings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fan Out — one item per posting for the extraction loop.\n// Code body removed from the public copy (2 lines). The folder README says what it does."
+      },
+      "name": "Fan Out",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 10,
+        "options": {
+          "reset": false
+        }
+      },
+      "name": "Job Loop",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1296,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Code body removed from the public copy (337 lines). The folder README says what it does."
+      },
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "name": "Wait",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1744,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"deepseek/deepseek-v4-flash\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": {{ JSON.stringify($('Build Prompt').item.json.system_message) }}\n    },\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($('Build Prompt').item.json.user_message) }}\n    }\n  ],\n  \"temperature\": 0.1,\n  \"reasoning\": { \"enabled\": false },\n  \"max_tokens\": 8192,\n  \"response_format\": { \"type\": \"json_object\" },\n  \"provider\": {\n    \"order\": [\"DeepInfra\", \"Baidu\", \"StreamLake\", \"DeepSeek\"],\n    \"allow_fallbacks\": true,\n    \"require_parameters\": true\n  }\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "name": "Openrouter API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1968,
+        416
+      ],
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "name": "Wait1",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2192,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// ============================================================\n// Parse & Normalise — v2 (deterministic rule enforcer)\n// ============================================================\n// Replaces the existing \"Parse & Normalise\" node jsCode.\n// Adds a post-LLM safety net so Role Desc / Role Qual always\n// follow the prompt's HARD RULES, even when the model slips.\n//\n// What this enforces deterministically (do's & don'ts):\n//   ✓ \"Description\" / \"Qualifications\" headers always present\n//   ✓ Bullets normalised to \"• \"\n// Code body removed from the public copy (718 lines). The folder README says what it does."
+      },
+      "name": "Parse & Normalise",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2416,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Decide Write — Ema's rule: a posting is only \"already submitted\" when the TITLE,\n// the SALARY and the DESCRIPTION all match an existing master-listrow for that page.\n// Any difference (pay changed, description rewritten, different office) means it is\n// a different job and gets entered.\n// Code body removed from the public copy (140 lines). The folder README says what it does."
+      },
+      "name": "Decide Write",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "n1",
+              "leftValue": "={{ $json.is_new }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Is New?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2864,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "<AIRTABLE_BASE>",
+          "mode": "list",
+          "cachedResultName": "<AIRTABLE_BASE_NAME>",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>"
+        },
+        "table": {
+          "__rl": true,
+          "value": "<AIRTABLE_TABLE>",
+          "mode": "list",
+          "cachedResultName": "Entries",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>/<AIRTABLE_TABLE>"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Company": "={{ $json.company }}",
+            "Job Link": "={{ $json.job_link_out }}",
+            "Role Name": "={{ $json.role_name }}",
+            "Role Desc": "={{ $json.role_desc }}",
+            "Role Qual": "={{ $json.role_qual }}",
+            "Address": "={{ $json.address }}",
+            "workplaceType": "={{ $json.workplace_type }}",
+            "Pay Min": "={{ $json.pay_min }}",
+            "Pay Max": "={{ $json.pay_max }}",
+            "Minimum Year": "={{ $json.minimum_year }}",
+            "Job Type": "={{ $json.job_type }}",
+            "Also Part-time?": "={{ $json.also_part_time }}",
+            "Seasonal?": "={{ $json.seasonal }}",
+            "Pay Unit": "={{ $json.pay_unit }}",
+            "Status": "={{ $json.status_value }}",
+            "Raw Job Text": "={{ $json.raw_block }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Company",
+              "displayName": "Company",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Raw Job Text",
+              "displayName": "Raw Job Text",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Label 2",
+              "displayName": "Label 2",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Address",
+              "displayName": "Address",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Google Address",
+              "displayName": "Google Address",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Role Name",
+              "displayName": "Role Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Role Desc",
+              "displayName": "Role Desc",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Role Qual",
+              "displayName": "Role Qual",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Job Link",
+              "displayName": "Job Link",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Pay Min",
+              "displayName": "Pay Min",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Pay Max",
+              "displayName": "Pay Max",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": ".",
+              "displayName": ".",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "No Pay Disclosed",
+                  "value": "No Pay Disclosed"
+                },
+                {
+                  "name": "17.50",
+                  "value": "17.50"
+                },
+                {
+                  "name": "https://careers.example-company.com/jobs/123",
+                  "value": "https://careers.example-company.com/jobs/123"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Minimum Year",
+              "displayName": "Minimum Year",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Job Type",
+              "displayName": "Job Type",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "full-time",
+                  "value": "full-time"
+                },
+                {
+                  "name": "part-time",
+                  "value": "part-time"
+                },
+                {
+                  "name": "internship",
+                  "value": "internship"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Also Part-time?",
+              "displayName": "Also Part-time?",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "yes",
+                  "value": "yes"
+                },
+                {
+                  "name": "no",
+                  "value": "no"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Seasonal?",
+              "displayName": "Seasonal?",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "yes",
+                  "value": "yes"
+                },
+                {
+                  "name": "no",
+                  "value": "no"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Pay Unit",
+              "displayName": "Pay Unit",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "salary",
+                  "value": "salary"
+                },
+                {
+                  "name": "hourly",
+                  "value": "hourly"
+                },
+                {
+                  "name": "invalid",
+                  "value": "invalid"
+                },
+                {
+                  "name": "monthly",
+                  "value": "monthly"
+                },
+                {
+                  "name": "weekly",
+                  "value": "weekly"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "-",
+              "displayName": "-",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Error",
+                  "value": "Error"
+                },
+                {
+                  "name": "Expired",
+                  "value": "Expired"
+                },
+                {
+                  "name": "Find Address",
+                  "value": "Find Address"
+                },
+                {
+                  "name": "NO SALARY",
+                  "value": "NO SALARY"
+                },
+                {
+                  "name": "Qualified",
+                  "value": "Qualified"
+                },
+                {
+                  "name": "RAW",
+                  "value": "RAW"
+                },
+                {
+                  "name": "SALARY ISSUE",
+                  "value": "SALARY ISSUE"
+                },
+                {
+                  "name": "Skip",
+                  "value": "Skip"
+                },
+                {
+                  "name": "STATE",
+                  "value": "STATE"
+                },
+                {
+                  "name": "https://careers.example-company.com/jobs/123",
+                  "value": "https://careers.example-company.com/jobs/123"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "workplaceType",
+              "displayName": "workplaceType",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Onsite",
+                  "value": "Onsite"
+                },
+                {
+                  "name": "Remote",
+                  "value": "Remote"
+                },
+                {
+                  "name": "Hybrid",
+                  "value": "Hybrid"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "name": "Create Entry",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        3088,
+        368
+      ],
+      "retryOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {},
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        3312,
+        488
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Summary — one line per company plus the write tally.\n// Code body removed from the public copy (68 lines). The folder README says what it does."
+      },
+      "name": "Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/<SHEET_ID>/values/Companies!A2:G400",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "Read Companies F:G",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1744,
+        32
+      ],
+      "retryOnFail": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build Count Write — put each company's Airtable count into column G of the\n// Companies tab, on the row whose column F holds that company's name.\n//\n// F2:G61 is the same run-queue block the Link Collector uses (F = company, G = count).\n// This never wipes the block: a company already listed in F keeps its row and only its\n// G cell is updated; one that is not listed is added to the first free row. So whatever\n// the collector last displayed there survives.\n// Code body removed from the public copy (75 lines). The folder README says what it does."
+      },
+      "name": "Build Count Write",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1968,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "e1",
+              "leftValue": "={{ $json.has_errors }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Any Errors?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1744,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "<SLACK_CHANNEL_ID>",
+          "cachedResultName": "data-entry"
+        },
+        "text": "=:warning: *One Link Companies — needs attention*\n\n{{ $json.problems }}\n\n_Entered {{ $json.entered }} of {{ $json.postings_found }} postings across {{ $json.companies }} companies; per-company counts are in the Companies tab, column G._\n*Execution:* {{ $execution.id }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": true,
+          "mrkdwn": true
+        }
+      },
+      "name": "Notify Errors",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        1968,
+        224
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/<SHEET_ID>/values:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.batch) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "Write Counts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2192,
+        32
+      ],
+      "retryOnFail": true,
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Run Manually": {
+      "main": [
+        [
+          {
+            "node": "Fetch Companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Fetch Companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Companies": {
+      "main": [
+        [
+          {
+            "node": "Prep Companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Companies": {
+      "main": [
+        [
+          {
+            "node": "Settle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Settle": {
+      "main": [
+        [
+          {
+            "node": "Read Queue F:G",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Queue F:G": {
+      "main": [
+        [
+          {
+            "node": "Seed Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Seed Queue": {
+      "main": [
+        [
+          {
+            "node": "Write Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Queue": {
+      "main": [
+        [
+          {
+            "node": "Fan Companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fan Companies": {
+      "main": [
+        [
+          {
+            "node": "Loop (rate limit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop (rate limit)": {
+      "main": [
+        [
+          {
+            "node": "Build master-listQuery",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Job Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Job Page": {
+      "main": [
+        [
+          {
+            "node": "Clean HTML → Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean HTML → Text": {
+      "main": [
+        [
+          {
+            "node": "Fetch OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch OK?": {
+      "main": [
+        [
+          {
+            "node": "Decodo Fetch",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Page Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decodo Fetch": {
+      "main": [
+        [
+          {
+            "node": "Process Decodo Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Decodo Response": {
+      "main": [
+        [
+          {
+            "node": "Page Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Page Ready": {
+      "main": [
+        [
+          {
+            "node": "Has Text?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Text?": {
+      "main": [
+        [
+          {
+            "node": "Split Postings",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Collect Company",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Postings": {
+      "main": [
+        [
+          {
+            "node": "Collect Company",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Company": {
+      "main": [
+        [
+          {
+            "node": "Update Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Progress": {
+      "main": [
+        [
+          {
+            "node": "Resume Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resume Loop": {
+      "main": [
+        [
+          {
+            "node": "Loop (rate limit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build master-listQuery": {
+      "main": [
+        [
+          {
+            "node": "Check master-list",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check master-list": {
+      "main": [
+        [
+          {
+            "node": "Explode Postings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Explode Postings": {
+      "main": [
+        [
+          {
+            "node": "Fan Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fan Out": {
+      "main": [
+        [
+          {
+            "node": "Job Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job Loop": {
+      "main": [
+        [
+          {
+            "node": "Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Openrouter API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Openrouter API": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Parse & Normalise",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Normalise": {
+      "main": [
+        [
+          {
+            "node": "Decide Write",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide Write": {
+      "main": [
+        [
+          {
+            "node": "Is New?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is New?": {
+      "main": [
+        [
+          {
+            "node": "Create Entry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Create Entry": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Results": {
+      "main": [
+        [
+          {
+            "node": "Job Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summary": {
+      "main": [
+        [
+          {
+            "node": "Read Companies F:G",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Any Errors?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Errors?": {
+      "main": [
+        [
+          {
+            "node": "Notify Errors",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Read Companies F:G": {
+      "main": [
+        [
+          {
+            "node": "Build Count Write",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Count Write": {
+      "main": [
+        [
+          {
+            "node": "Write Counts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}
