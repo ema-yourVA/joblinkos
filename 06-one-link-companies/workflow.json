@@ -246,7 +246,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://scraper-api.decodo.com/v2/scrape",
+        "url": "<SCRAPING_API_ENDPOINT>",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -274,7 +274,7 @@
           "timeout": 120000
         }
       },
-      "name": "Decodo Fetch",
+      "name": "Scraping API Fetch",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -286,9 +286,9 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Process Decodo Web Scraping API response.\n// Decodo returns { results: [ { content, status_code, ... } ] }.\n// content is the JS-rendered HTML of the target. We mirror \"Clean HTML -> Text\"\n// output so the rest of the pipeline is unchanged.\n// Code body removed from the public copy (198 lines). The folder README says what it does."
+        "jsCode": "// Process Scraping API Web Scraping API response.\n// Scraping API returns { results: [ { content, status_code, ... } ] }.\n// content is the JS-rendered HTML of the target. We mirror \"Clean HTML -> Text\"\n// output so the rest of the pipeline is unchanged.\n// Code body removed from the public copy (198 lines). The folder README says what it does."
       },
-      "name": "Process Decodo Response",
+      "name": "Process Scraping API Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -355,7 +355,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "url": "<AI_API_ENDPOINT>",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
@@ -551,7 +551,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "url": "<AI_API_ENDPOINT>",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
@@ -570,7 +570,7 @@
           "timeout": 60000
         }
       },
-      "name": "Openrouter API",
+      "name": "AI Extraction API",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -1332,7 +1332,7 @@
       "main": [
         [
           {
-            "node": "Decodo Fetch",
+            "node": "Scraping API Fetch",
             "type": "main",
             "index": 0
           }
@@ -1346,18 +1346,18 @@
         ]
       ]
     },
-    "Decodo Fetch": {
+    "Scraping API Fetch": {
       "main": [
         [
           {
-            "node": "Process Decodo Response",
+            "node": "Process Scraping API Response",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Process Decodo Response": {
+    "Process Scraping API Response": {
       "main": [
         [
           {
@@ -1518,14 +1518,14 @@
       "main": [
         [
           {
-            "node": "Openrouter API",
+            "node": "AI Extraction API",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Openrouter API": {
+    "AI Extraction API": {
       "main": [
         [
           {

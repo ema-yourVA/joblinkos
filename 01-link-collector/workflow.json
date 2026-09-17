@@ -118,7 +118,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://scraper-api.decodo.com/v2/scrape",
+        "url": "<SCRAPING_API_ENDPOINT>",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -146,7 +146,7 @@
           "timeout": 120000
         }
       },
-      "name": "Decodo Fetch",
+      "name": "Scraping API Fetch",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -801,7 +801,7 @@
         ]
       ]
     },
-    "Decodo Fetch": {
+    "Scraping API Fetch": {
       "main": [
         [
           {
@@ -943,7 +943,7 @@
         ],
         [
           {
-            "node": "Decodo Fetch",
+            "node": "Scraping API Fetch",
             "type": "main",
             "index": 0
           }

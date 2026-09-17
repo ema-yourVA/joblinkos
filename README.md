@@ -102,8 +102,8 @@ Separately, an audit found the scraping service had quietly been charging every 
 | **Runs the workflows** | n8n, self-hosted |
 | **Control panel** | Google Sheets and Google Apps Script |
 | **Databases** | Airtable for the job records, Supabase (PostgreSQL) for the address list |
-| **AI** | DeepSeek V4 Flash, through OpenRouter |
-| **Fetching pages** | plain web request first, then Jina AI Reader, then the Decodo scraping service |
+| **AI** | DeepSeek V4 Flash, called through an AI model API |
+| **Fetching pages** | plain web request first, then Jina AI Reader, then a paid scraping service |
 | **Alerts** | Slack, sent through a small relay so the Slack address never sits inside a client workflow |
 | **Version control** | GitHub, for the workflow files |
 

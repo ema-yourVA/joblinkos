@@ -162,7 +162,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// v64 — the Link Collector POSTs the day's breakdown here at the end of batch 4.\n// Kept in THIS workflow's static data so \"Link Report\" in Slack can answer instantly,\n// with no Sheets read and no Decodo request.\n// Code body removed from the public copy (33 lines). The folder README says what it does."
+        "jsCode": "// v64 — the Link Collector POSTs the day's breakdown here at the end of batch 4.\n// Kept in THIS workflow's static data so \"Link Report\" in Slack can answer instantly,\n// with no Sheets read and no Scraping API request.\n// Code body removed from the public copy (33 lines). The folder README says what it does."
       },
       "name": "Save Report Data",
       "type": "n8n-nodes-base.code",
