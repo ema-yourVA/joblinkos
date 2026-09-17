@@ -1,0 +1,2624 @@
+{
+  "name": "Job Link OS - Data Scraper (layout only)",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "<AIRTABLE_BASE>",
+          "mode": "list",
+          "cachedResultName": "<AIRTABLE_BASE_NAME>",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>"
+        },
+        "table": {
+          "__rl": true,
+          "value": "<AIRTABLE_TABLE>",
+          "mode": "list",
+          "cachedResultName": "Entries",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>/<AIRTABLE_TABLE>"
+        },
+        "filterByFormula": "AND(\n  {Job Link} != '',\n  {Status} = ''\n)",
+        "options": {}
+      },
+      "name": "Fetch Unprocessed Records",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -14496,
+        6080
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ATS URL rewriting — convert JS-rendered ATS URLs to API-friendly endpoints\n// This runs before Fetch Job Page so the HTTP request gets scrapeable content.\n// Code body removed from the public copy (339 lines). The folder README says what it does."
+      },
+      "name": "Prep Records",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -14272,
+        6080
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 10,
+        "options": {
+          "reset": false
+        }
+      },
+      "name": "Loop (rate limit)",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -14048,
+        6080
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.job_link }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Accept",
+              "value": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            },
+            {
+              "name": "Accept-Language",
+              "value": "en-US,en;q=0.9"
+            },
+            {
+              "name": "orgoid",
+              "value": "={{ $json.adp_orgoid || '' }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 20000
+        }
+      },
+      "name": "Fetch Job Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -13824,
+        5576
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Code body removed from the public copy (1179 lines). The folder README says what it does."
+      },
+      "name": "Clean HTML → Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -13600,
+        5576
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "fetch-check",
+              "leftValue": "={{ $json.fetch_failed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Fetch OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -13376,
+        5576
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "<AIRTABLE_BASE>",
+          "mode": "list",
+          "cachedResultName": "<AIRTABLE_BASE_NAME>",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>"
+        },
+        "table": {
+          "__rl": true,
+          "value": "<AIRTABLE_TABLE>",
+          "mode": "list",
+          "cachedResultName": "Entries",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>/<AIRTABLE_TABLE>"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.record_id }}",
+            "Status": "Error"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true
+            },
+            {
+              "id": "Company",
+              "displayName": "Company",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Raw Job Text",
+              "displayName": "Raw Job Text",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Label 2",
+              "displayName": "Label 2",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "workplaceType",
+              "displayName": "workplaceType",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Onsite",
+                  "value": "Onsite"
+                },
+                {
+                  "name": "Remote",
+                  "value": "Remote"
+                },
+                {
+                  "name": "Hybrid",
+                  "value": "Hybrid"
+                }
+              ],
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Address",
+              "displayName": "Address",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Label",
+              "displayName": "Label",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Role Name",
+              "displayName": "Role Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Role Desc",
+              "displayName": "Role Desc",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Role Qual",
+              "displayName": "Role Qual",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Job Link",
+              "displayName": "Job Link",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Pay Min",
+              "displayName": "Pay Min",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Pay Max",
+              "displayName": "Pay Max",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": ".",
+              "displayName": ".",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Minimum Year",
+              "displayName": "Minimum Year",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Job Type",
+              "displayName": "Job Type",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "full-time",
+                  "value": "full-time"
+                },
+                {
+                  "name": "part-time",
+                  "value": "part-time"
+                },
+                {
+                  "name": "internship",
+                  "value": "internship"
+                }
+              ],
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Also Part-time?",
+              "displayName": "Also Part-time?",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "yes",
+                  "value": "yes"
+                },
+                {
+                  "name": "no",
+                  "value": "no"
+                }
+              ],
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Seasonal?",
+              "displayName": "Seasonal?",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "yes",
+                  "value": "yes"
+                },
+                {
+                  "name": "no",
+                  "value": "no"
+                }
+              ],
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Pay Unit",
+              "displayName": "Pay Unit",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "salary",
+                  "value": "salary"
+                },
+                {
+                  "name": "hourly",
+                  "value": "hourly"
+                },
+                {
+                  "name": "invalid",
+                  "value": "invalid"
+                },
+                {
+                  "name": "monthly",
+                  "value": "monthly"
+                }
+              ],
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Qualified",
+                  "value": "Qualified"
+                },
+                {
+                  "name": "Skip",
+                  "value": "Skip"
+                },
+                {
+                  "name": "Error",
+                  "value": "Error"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "name": "Log: Fetch Failed",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -11584,
+        5768
+      ],
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Code body removed from the public copy (342 lines). The folder README says what it does."
+      },
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -11136,
+        5336
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// ── V55_ADDRESS_START — Ema's address format (2026-08-19) ──\n// Code body removed from the public copy (1018 lines). The folder README says what it does."
+      },
+      "name": "Parse & Normalise",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -10240,
+        5336
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "rule-error-001",
+                    "leftValue": "={{ $json.skip_reason }}",
+                    "rightValue": "^(parse_error|fetch_error|error)$",
+                    "operator": {
+                      "type": "string",
+                      "operation": "regex"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Error"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "rule-salary-001",
+                    "leftValue": "={{ $json.skip_reason }}",
+                    "rightValue": "^(salary_issue|invalid_pay_unit|low_pay)$",
+                    "operator": {
+                      "type": "string",
+                      "operation": "regex"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Salary Issue"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "rule-qualified-001",
+                    "leftValue": "={{ $json.skip_reason }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "empty",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Qualified"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "Unknown → Error"
+        }
+      },
+      "name": "Route by Skip Reason",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -10016,
+        5304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"deepseek/deepseek-v4-flash\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": {{ JSON.stringify($('Build Prompt').item.json.system_message) }}\n    },\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($('Build Prompt').item.json.user_message) }}\n    }\n  ],\n  \"temperature\": 0.1,\n  \"reasoning\": { \"enabled\": false },\n  \"max_tokens\": 8192,\n  \"response_format\": { \"type\": \"json_object\" },\n  \"provider\": {\n    \"order\": [\"DeepInfra\", \"Baidu\", \"StreamLake\", \"DeepSeek\"],\n    \"allow_fallbacks\": true,\n    \"require_parameters\": true\n  }\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "name": "Openrouter API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -10688,
+        5336
+      ],
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "amount": 1
+      },
+      "name": "Wait",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -10912,
+        5336
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 1
+      },
+      "name": "Wait1",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -10464,
+        5336
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "seconds"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -15168,
+        6080
+      ],
+      "name": "Trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://<N8N_HOST>/webhook/<WEBHOOK_PATH>",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "running"
+            },
+            {
+              "name": "workflowId",
+              "value": "IjPF82xxVsYMxPCJ"
+            },
+            {
+              "name": "limit",
+              "value": "10"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-N8N-API-KEY",
+              "value": "<REMOVED_ID>.<REMOVED_ID>.<REMOVED_ID>"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Check Running Executions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -14944,
+        6080
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-running-001",
+              "leftValue": "={{ $json.data.length }}",
+              "rightValue": 1,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Already Running?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -14720,
+        6080
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cond-jsr-1",
+              "leftValue": "={{ $json.fail_status }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "JS-Rendered (paste into Raw Job Text)"
+            },
+            {
+              "id": "cond-jsr-2",
+              "leftValue": "={{ $json.fail_status }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "Empty Response"
+            },
+            {
+              "id": "cond-jsr-3",
+              "leftValue": "={{ $json.fail_status }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "Fetch Error"
+            },
+            {
+              "id": "cond-jsr-4-deadlink",
+              "leftValue": "={{ $json.fail_status }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "Dead Link"
+            }
+          ],
+          "combinator": "or"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "name": "Is JS-Rendered?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -13152,
+        5648
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://r.jina.ai/{{ $json.job_link.replace('#', '%23') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "text/plain"
+            },
+            {
+              "name": "X-Return-Format",
+              "value": "markdown"
+            },
+            {
+              "name": "X-Timeout",
+              "value": "25"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "name": "Jina AI Fetch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -12928,
+        5576
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// ── NEW v2: Process Jina AI Reader response ─────────────────\n// Validates content and reshapes to match Clean HTML → Text output\n// so Build Prompt works unchanged.\n// Code body removed from the public copy (178 lines). The folder README says what it does."
+      },
+      "name": "Process Jina Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -12704,
+        5576
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "jina-ok-check",
+              "leftValue": "={{ $json.fetch_failed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Jina Content OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -12480,
+        5576
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "<AIRTABLE_BASE>",
+          "mode": "list",
+          "cachedResultName": "<AIRTABLE_BASE_NAME>",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>"
+        },
+        "table": {
+          "__rl": true,
+          "value": "<AIRTABLE_TABLE>",
+          "mode": "list",
+          "cachedResultName": "Entries",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>/<AIRTABLE_TABLE>"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {
+            "-": false
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Company",
+              "displayName": "Company",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Raw Job Text",
+              "displayName": "Raw Job Text",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Label 2",
+              "displayName": "Label 2",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Address",
+              "displayName": "Address",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Google Address",
+              "displayName": "Google Address",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Role Name",
+              "displayName": "Role Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Role Desc",
+              "displayName": "Role Desc",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Role Qual",
+              "displayName": "Role Qual",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Job Link",
+              "displayName": "Job Link",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Pay Min",
+              "displayName": "Pay Min",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Pay Max",
+              "displayName": "Pay Max",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": ".",
+              "displayName": ".",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "No Pay Disclosed",
+                  "value": "No Pay Disclosed"
+                },
+                {
+                  "name": "17.50",
+                  "value": "17.50"
+                },
+                {
+                  "name": "https://careers.example-company.com/jobs/123",
+                  "value": "https://careers.example-company.com/jobs/123"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Minimum Year",
+              "displayName": "Minimum Year",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Job Type",
+              "displayName": "Job Type",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "full-time",
+                  "value": "full-time"
+                },
+                {
+                  "name": "part-time",
+                  "value": "part-time"
+                },
+                {
+                  "name": "internship",
+                  "value": "internship"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Also Part-time?",
+              "displayName": "Also Part-time?",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "yes",
+                  "value": "yes"
+                },
+                {
+                  "name": "no",
+                  "value": "no"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Seasonal?",
+              "displayName": "Seasonal?",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "yes",
+                  "value": "yes"
+                },
+                {
+                  "name": "no",
+                  "value": "no"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Pay Unit",
+              "displayName": "Pay Unit",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "salary",
+                  "value": "salary"
+                },
+                {
+                  "name": "hourly",
+                  "value": "hourly"
+                },
+                {
+                  "name": "invalid",
+                  "value": "invalid"
+                },
+                {
+                  "name": "monthly",
+                  "value": "monthly"
+                },
+                {
+                  "name": "weekly",
+                  "value": "weekly"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "-",
+              "displayName": "-",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Error",
+                  "value": "Error"
+                },
+                {
+                  "name": "Expired",
+                  "value": "Expired"
+                },
+                {
+                  "name": "Find Address",
+                  "value": "Find Address"
+                },
+                {
+                  "name": "NO SALARY",
+                  "value": "NO SALARY"
+                },
+                {
+                  "name": "Qualified",
+                  "value": "Qualified"
+                },
+                {
+                  "name": "RAW",
+                  "value": "RAW"
+                },
+                {
+                  "name": "SALARY ISSUE",
+                  "value": "SALARY ISSUE"
+                },
+                {
+                  "name": "Skip",
+                  "value": "Skip"
+                },
+                {
+                  "name": "STATE",
+                  "value": "STATE"
+                },
+                {
+                  "name": "https://careers.example-company.com/jobs/123",
+                  "value": "https://careers.example-company.com/jobs/123"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "workplaceType",
+              "displayName": "workplaceType",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Onsite",
+                  "value": "Onsite"
+                },
+                {
+                  "name": "Remote",
+                  "value": "Remote"
+                },
+                {
+                  "name": "Hybrid",
+                  "value": "Hybrid"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "name": "Error",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -9568,
+        5624
+      ],
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "<AIRTABLE_BASE>",
+          "mode": "list",
+          "cachedResultName": "<AIRTABLE_BASE_NAME>",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>"
+        },
+        "table": {
+          "__rl": true,
+          "value": "<AIRTABLE_TABLE>",
+          "mode": "list",
+          "cachedResultName": "Entries",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>/<AIRTABLE_TABLE>"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.record_id }}",
+            "Role Name": "={{ $json.role_name }}",
+            "Role Desc": "={{ $json.role_desc }}",
+            "Role Qual": "={{ $json.role_qual }}",
+            "Address": "={{ $json.address }}",
+            "workplaceType": "={{ $json.workplace_type }}",
+            "Pay Min": "={{ $json.pay_min }}",
+            "Pay Max": "={{ $json.pay_max }}",
+            "Minimum Year": "={{ $json.minimum_year }}",
+            "Job Type": "={{ $json.job_type }}",
+            "Also Part-time?": "={{ $json.also_part_time }}",
+            "Seasonal?": "={{ $json.seasonal }}",
+            "Pay Unit": "={{ $json.pay_unit }}",
+            "Status": "Qualified"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true
+            },
+            {
+              "id": "Company",
+              "displayName": "Company",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Raw Job Text",
+              "displayName": "Raw Job Text",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Label 2",
+              "displayName": "Label 2",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Option 1",
+                  "value": "Option 1"
+                },
+                {
+                  "name": "Option 2",
+                  "value": "Option 2"
+                },
+                {
+                  "name": "Option 3",
+                  "value": "Option 3"
+                }
+              ],
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "workplaceType",
+              "displayName": "workplaceType",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Onsite",
+                  "value": "Onsite"
+                },
+                {
+                  "name": "Remote",
+                  "value": "Remote"
+                },
+                {
+                  "name": "Hybrid",
+                  "value": "Hybrid"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Address",
+              "displayName": "Address",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Google Address",
+              "displayName": "Google Address",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Role Name",
+              "displayName": "Role Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Role Desc",
+              "displayName": "Role Desc",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Role Qual",
+              "displayName": "Role Qual",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Job Link",
+              "displayName": "Job Link",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Pay Min",
+              "displayName": "Pay Min",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Pay Max",
+              "displayName": "Pay Max",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Currency",
+              "displayName": "Currency",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "USD",
+                  "value": "USD"
+                },
+                {
+                  "name": "CAD",
+                  "value": "CAD"
+                },
+                {
+                  "name": "NZD",
+                  "value": "NZD"
+                },
+                {
+                  "name": "AUD",
+                  "value": "AUD"
+                },
+                {
+                  "name": "GBP",
+                  "value": "GBP"
+                },
+                {
+                  "name": "EUR",
+                  "value": "EUR"
+                }
+              ],
+              "readOnly": false,
+              "removed": true
+            },
+            {
+              "id": "Minimum Year",
+              "displayName": "Minimum Year",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Job Type",
+              "displayName": "Job Type",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "full-time",
+                  "value": "full-time"
+                },
+                {
+                  "name": "part-time",
+                  "value": "part-time"
+                },
+                {
+                  "name": "internship",
+                  "value": "internship"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Also Part-time?",
+              "displayName": "Also Part-time?",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "yes",
+                  "value": "yes"
+                },
+                {
+                  "name": "no",
+                  "value": "no"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Seasonal?",
+              "displayName": "Seasonal?",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "yes",
+                  "value": "yes"
+                },
+                {
+                  "name": "no",
+                  "value": "no"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Pay Unit",
+              "displayName": "Pay Unit",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "hourly",
+                  "value": "hourly"
+                },
+                {
+                  "name": "salary",
+                  "value": "salary"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Qualified",
+                  "value": "Qualified"
+                },
+                {
+                  "name": "Error",
+                  "value": "Error"
+                },
+                {
+                  "name": "Find Address",
+                  "value": "Find Address"
+                },
+                {
+                  "name": "Skip",
+                  "value": "Skip"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "name": "Qualified",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -9792,
+        5720
+      ],
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Improved Low Pay Scan - v6 ($-anchored + productivity + raise-context aware)\n// Code body removed from the public copy (74 lines). The folder README says what it does."
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -11584,
+        5408
+      ],
+      "name": "Low Pay Scan"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "<AIRTABLE_BASE>",
+          "mode": "list",
+          "cachedResultName": "<AIRTABLE_BASE_NAME>",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>"
+        },
+        "table": {
+          "__rl": true,
+          "value": "<AIRTABLE_TABLE>",
+          "mode": "list",
+          "cachedResultName": "Entries",
+          "cachedResultUrl": "https://airtable.com/<AIRTABLE_BASE>/<AIRTABLE_TABLE>"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": null,
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "Company",
+              "displayName": "Company",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Raw Job Text",
+              "displayName": "Raw Job Text",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Label 2",
+              "displayName": "Label 2",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Address",
+              "displayName": "Address",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Google Address",
+              "displayName": "Google Address",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Role Name",
+              "displayName": "Role Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Role Desc",
+              "displayName": "Role Desc",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Role Qual",
+              "displayName": "Role Qual",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Job Link",
+              "displayName": "Job Link",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Pay Min",
+              "displayName": "Pay Min",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Pay Max",
+              "displayName": "Pay Max",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": ".",
+              "displayName": ".",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "No Pay Disclosed",
+                  "value": "No Pay Disclosed"
+                },
+                {
+                  "name": "17.50",
+                  "value": "17.50"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Minimum Year",
+              "displayName": "Minimum Year",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Job Type",
+              "displayName": "Job Type",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "full-time",
+                  "value": "full-time"
+                },
+                {
+                  "name": "part-time",
+                  "value": "part-time"
+                },
+                {
+                  "name": "internship",
+                  "value": "internship"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Also Part-time?",
+              "displayName": "Also Part-time?",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "yes",
+                  "value": "yes"
+                },
+                {
+                  "name": "no",
+                  "value": "no"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Seasonal?",
+              "displayName": "Seasonal?",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "yes",
+                  "value": "yes"
+                },
+                {
+                  "name": "no",
+                  "value": "no"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Pay Unit",
+              "displayName": "Pay Unit",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "salary",
+                  "value": "salary"
+                },
+                {
+                  "name": "hourly",
+                  "value": "hourly"
+                },
+                {
+                  "name": "invalid",
+                  "value": "invalid"
+                },
+                {
+                  "name": "monthly",
+                  "value": "monthly"
+                },
+                {
+                  "name": "weekly",
+                  "value": "weekly"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "-",
+              "displayName": "-",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "boolean",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Error",
+                  "value": "Error"
+                },
+                {
+                  "name": "Expired",
+                  "value": "Expired"
+                },
+                {
+                  "name": "Find Address",
+                  "value": "Find Address"
+                },
+                {
+                  "name": "NO SALARY",
+                  "value": "NO SALARY"
+                },
+                {
+                  "name": "Qualified",
+                  "value": "Qualified"
+                },
+                {
+                  "name": "RAW",
+                  "value": "RAW"
+                },
+                {
+                  "name": "SALARY ISSUE",
+                  "value": "SALARY ISSUE"
+                },
+                {
+                  "name": "Skip",
+                  "value": "Skip"
+                },
+                {
+                  "name": "STATE",
+                  "value": "STATE"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "workplaceType",
+              "displayName": "workplaceType",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Onsite",
+                  "value": "Onsite"
+                },
+                {
+                  "name": "Remote",
+                  "value": "Remote"
+                },
+                {
+                  "name": "Hybrid",
+                  "value": "Hybrid"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "name": "Low Pay",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -9568,
+        5816
+      ],
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "<REMOVED_ID>",
+              "leftValue": "={{ $json.low_pay_prefilter }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -11360,
+        5408
+      ],
+      "name": "Pre-LLM Low Pay?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://scraper-api.decodo.com/v2/scrape",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "<REMOVED_CREDENTIAL>"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"url\": {{ JSON.stringify($('Loop (rate limit)').item.json.job_link) }},\n  \"headless\": \"html\",\n  \"geo\": \"United States\",\n  \"proxy_pool\": \"premium\",\n  \"wait_time\": 5\n}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "name": "Decodo Fetch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -12256,
+        5600
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Process Decodo Web Scraping API response.\n// Decodo returns { results: [ { content, status_code, ... } ] }.\n// content is the JS-rendered HTML of the target. We mirror \"Clean HTML -> Text\"\n// output so the rest of the pipeline is unchanged.\n// Code body removed from the public copy (198 lines). The folder README says what it does."
+      },
+      "name": "Process Decodo Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -12032,
+        5600
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "decodo-ok-check",
+              "leftValue": "={{ $json.fetch_failed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Decodo Content OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -11808,
+        5600
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Build the Airtable payload for a non-Qualified outcome.\n// Only keys with a real value are emitted; the Airtable node is on\n// autoMapInputData, so anything omitted here is left untouched on the record.\n// That keeps a re-checked row from being blanked when an extraction comes back empty.\n// Code body removed from the public copy (25 lines). The folder README says what it does."
+      },
+      "name": "Error Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -9792,
+        5216
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Build the Airtable payload for a non-Qualified outcome.\n// Only keys with a real value are emitted; the Airtable node is on\n// autoMapInputData, so anything omitted here is left untouched on the record.\n// That keeps a re-checked row from being blanked when an extraction comes back empty.\n// Code body removed from the public copy (28 lines). The folder README says what it does."
+      },
+      "name": "Low Pay Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -9792,
+        5456
+      ]
+    }
+  ],
+  "connections": {
+    "Fetch Unprocessed Records": {
+      "main": [
+        [
+          {
+            "node": "Prep Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Records": {
+      "main": [
+        [
+          {
+            "node": "Loop (rate limit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop (rate limit)": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Fetch Job Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Job Page": {
+      "main": [
+        [
+          {
+            "node": "Clean HTML → Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean HTML → Text": {
+      "main": [
+        [
+          {
+            "node": "Fetch OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch OK?": {
+      "main": [
+        [
+          {
+            "node": "Is JS-Rendered?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Low Pay Scan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log: Fetch Failed": {
+      "main": [
+        [
+          {
+            "node": "Loop (rate limit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Normalise": {
+      "main": [
+        [
+          {
+            "node": "Route by Skip Reason",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Skip Reason": {
+      "main": [
+        [
+          {
+            "node": "Error Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Low Pay Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Qualified",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Openrouter API": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Openrouter API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Parse & Normalise",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check Running Executions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Running Executions": {
+      "main": [
+        [
+          {
+            "node": "Already Running?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already Running?": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Fetch Unprocessed Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is JS-Rendered?": {
+      "main": [
+        [
+          {
+            "node": "Jina AI Fetch",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log: Fetch Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Jina AI Fetch": {
+      "main": [
+        [
+          {
+            "node": "Process Jina Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Jina Response": {
+      "main": [
+        [
+          {
+            "node": "Jina Content OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Jina Content OK?": {
+      "main": [
+        [
+          {
+            "node": "Low Pay Scan",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Decodo Fetch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qualified": {
+      "main": [
+        [
+          {
+            "node": "Loop (rate limit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Low Pay Scan": {
+      "main": [
+        [
+          {
+            "node": "Pre-LLM Low Pay?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pre-LLM Low Pay?": {
+      "main": [
+        [
+          {
+            "node": "Low Pay Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Low Pay": {
+      "main": [
+        [
+          {
+            "node": "Loop (rate limit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decodo Fetch": {
+      "main": [
+        [
+          {
+            "node": "Process Decodo Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Decodo Response": {
+      "main": [
+        [
+          {
+            "node": "Decodo Content OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decodo Content OK?": {
+      "main": [
+        [
+          {
+            "node": "Low Pay Scan",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log: Fetch Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Fields": {
+      "main": [
+        [
+          {
+            "node": "Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Low Pay Fields": {
+      "main": [
+        [
+          {
+            "node": "Low Pay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error": {
+      "main": [
+        [
+          {
+            "node": "Loop (rate limit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}
