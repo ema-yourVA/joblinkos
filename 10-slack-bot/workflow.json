@@ -1,0 +1,602 @@
+{
+  "name": "Job Link OS - Slack Bot (layout only)",
+  "nodes": [
+    {
+      "parameters": {
+        "trigger": [
+          "message"
+        ],
+        "channelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "<SLACK_CHANNEL_ID>",
+          "cachedResultName": "data-entry"
+        },
+        "options": {}
+      },
+      "name": "Slack Trigger",
+      "type": "n8n-nodes-base.slackTrigger",
+      "typeVersion": 1,
+      "position": [
+        -784,
+        -176
+      ],
+      "notes": "Slack app → Event Subscriptions → Request URL = this node's PRODUCTION url; subscribe to message.channels (scope channels:history)."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Code body removed from the public copy (110 lines). The folder README says what it does."
+      },
+      "name": "Is it \"Final Check\"?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        -176
+      ],
+      "notes": "No items = stay silent. fire:false = say why (cooldown only). fire:true = run."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "version": 2,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c-fire",
+              "leftValue": "={{ $json.fire }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Start it?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -336,
+        -176
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://<N8N_HOST>/webhook/<WEBHOOK_PATH>",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ action: \"check_masterlist\", sheet: $json.sheet, gid: $json.gid, source: \"slack\", requested_by: $json.user }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "name": "Start Final Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        112,
+        -144
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "Main Filter FAST webhook. Tab is hard-coded to \"Main Filter\" — see the header of make_master-listslack_workflow.js."
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "<SLACK_CHANNEL_ID>",
+          "cachedResultName": "data-entry"
+        },
+        "text": "={{ (() => { const c = Number($json.statusCode || 0); const ok = c >= 200 && c < 300; const tab = \"Main Filter\"; return ok ? ':white_check_mark: *Final Check started* on *' + tab + '*.\\nChecking every row there with a blank Status against the master-listmaster list — statuses appear in column D as it goes.\\n_Do not sort, insert or delete rows on that tab until it finishes._' : ':warning: *Final Check did NOT start.* The Main Filter FAST webhook answered *' + (c || 'no response') + '*.\\nIs the workflow \"Job Link OS - Main Filter FAST\" still active? Nothing was changed on *' + tab + '*.'; })() }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "mrkdwn": true
+        }
+      },
+      "name": "Reply: Started",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        336,
+        -144
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "<SLACK_CHANNEL_ID>",
+          "cachedResultName": "data-entry"
+        },
+        "text": "={{ \":hourglass_flowing_sand: \" + $json.reason }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "mrkdwn": true
+        }
+      },
+      "name": "Reply: Ignored",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        560,
+        -48
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "<WEBHOOK_PATH>",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "name": "Ingest Report Data",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -784,
+        176
+      ],
+      "notes": "Called by Link Collector \"Notify: Links Collected\" (v63) at the end of batch 4."
+    },
+    {
+      "parameters": {
+        "jsCode": "// v64 — the Link Collector POSTs the day's breakdown here at the end of batch 4.\n// Kept in THIS workflow's static data so \"Link Report\" in Slack can answer instantly,\n// with no Sheets read and no Decodo request.\n// Code body removed from the public copy (33 lines). The folder README says what it does."
+      },
+      "name": "Save Report Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "version": 2,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c-lr",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "link_report",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Is Link Report?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -112,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// v72 — the Link Report only reports EXCEPTIONS: a board that errored, or one whose link\n// count no longer matches the Status Ema wrote in the Companies tab.\n// Code body removed from the public copy (177 lines). The folder README says what it does."
+      },
+      "name": "Build Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        112,
+        -336
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "version": 2,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c-have",
+              "leftValue": "={{ $json.empty }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Have Data?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        336,
+        -336
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "<SLACK_CHANNEL_ID>",
+          "cachedResultName": "data-entry"
+        },
+        "text": "={{ $json.summary }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "mrkdwn": true
+        }
+      },
+      "name": "Post Summary",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        560,
+        -384
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "options": {
+          "channelId": "<SLACK_CHANNEL_ID>",
+          "fileName": "={{ $json.file_name }}",
+          "threadTs": "={{ $json.thread_ts }}",
+          "title": "={{ $json.file_name }}"
+        }
+      },
+      "name": "Upload List",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        1008,
+        -384
+      ],
+      "onError": "continueErrorOutput",
+      "notes": "Needs files:write on the bot. If refused, the error output posts the same list as threaded text."
+    },
+    {
+      "parameters": {
+        "jsCode": "// v64 — fallback when the file upload is refused (e.g. no files:write scope):\n// post the same list as threaded replies so the answer is never lost.\n// Code body removed from the public copy (21 lines). The folder README says what it does."
+      },
+      "name": "Chunk List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1232,
+        -384
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "<SLACK_CHANNEL_ID>",
+          "cachedResultName": "data-entry"
+        },
+        "text": "={{ $json.chunk }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "thread_ts": {
+            "replyValues": {
+              "thread_ts": "={{ $json.thread_ts }}"
+            }
+          },
+          "mrkdwn": true
+        }
+      },
+      "name": "Post Chunk",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        1456,
+        -384
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// v65 — a Slack node replaces the item with its API response, so the binary from\n// Build Report cannot survive Post Summary. Rebuild it here from the same tsv.\n// Code body removed from the public copy (20 lines). The folder README says what it does."
+      },
+      "name": "Attach File",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        784,
+        -384
+      ]
+    },
+    {
+      "name": "Is Company Lookup?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        320,
+        192
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cq",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "company_lookup"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Answer Company",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        192
+      ],
+      "parameters": {
+        "jsCode": "// Answer Company (v95, 2026-09-13) — \"how many links was fetched today on the company Company C\".\n// Answers from this workflow's OWN static data, so nothing is fetched and the reply is instant.\n// ⚠️ The name does not have to be spelled exactly: it is matched fuzzily against the companies the\n//    collector actually reported, so \"agendai\", \"Company C inc\" and \"Company C\" all resolve.\n// Code body removed from the public copy (136 lines). The folder README says what it does."
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "<SLACK_CHANNEL_ID>",
+          "cachedResultName": "data-entry"
+        },
+        "text": "={{ $json.text }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "mrkdwn": true
+        }
+      },
+      "name": "Reply: Company",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        820,
+        192
+      ],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Slack Trigger": {
+      "main": [
+        [
+          {
+            "node": "Is it \"Final Check\"?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is it \"Final Check\"?": {
+      "main": [
+        [
+          {
+            "node": "Start it?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start it?": {
+      "main": [
+        [
+          {
+            "node": "Is Company Lookup?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply: Ignored",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start Final Check": {
+      "main": [
+        [
+          {
+            "node": "Reply: Started",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Link Report?": {
+      "main": [
+        [
+          {
+            "node": "Build Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Start Final Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Report": {
+      "main": [
+        [
+          {
+            "node": "Have Data?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Have Data?": {
+      "main": [
+        [
+          {
+            "node": "Post Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply: Ignored",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post Summary": {
+      "main": [
+        [
+          {
+            "node": "Attach File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload List": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Chunk List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chunk List": {
+      "main": [
+        [
+          {
+            "node": "Post Chunk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ingest Report Data": {
+      "main": [
+        [
+          {
+            "node": "Save Report Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach File": {
+      "main": [
+        [
+          {
+            "node": "Upload List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Company Lookup?": {
+      "main": [
+        [
+          {
+            "node": "Answer Company",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Link Report?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Answer Company": {
+      "main": [
+        [
+          {
+            "node": "Reply: Company",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}
